@@ -26,7 +26,8 @@ import qiskit
 from qiskit.visualization import *
 
 from qiskit.circuit.library.standard_gates import HGate
-'''
+
+
 
 # state embedding is done with pennyLane
 
@@ -35,60 +36,11 @@ from qiskit.circuit.library.standard_gates import HGate
 
 
 
-n_samples = 100
-
-X_train = datasets.MNIST(root='./data', train=True, download=True,
-                         transform=transforms.Compose([transforms.Resize((8,8)),transforms.ToTensor() , 
-                                                       transforms.Normalize((0.5,) , (1,))
-                                                       ]))
-
-# Leaving only labels 0 and 1 
-idx = np.append(np.where(X_train.targets == 0)[0][:n_samples], 
-                np.where(X_train.targets == 1)[0][:n_samples])
-
-X_train.data = X_train.data[idx]
-X_train.targets = X_train.targets[idx]
-
-train_loader = torch.utils.data.DataLoader(X_train, batch_size=1, shuffle=True)
-
-
-data,target = iter(train_loader).__next__()
-normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
-
-numberOfQubits = int(np.ceil(np.log2(normalized.shape[0])))
-
-dev = qml.device('default.qubit', wires=numberOfQubits)
-
-@qml.qnode(dev)
-def circuit():
-    qml.templates.embeddings.AmplitudeEmbedding(normalized[i for i in range(numberOfQubits)])
-    return qml.probs([i for i in range(numberOfQubits)]) # measurement
-    # return qml.expval(qml.PauliZ([i for i in range(numberOfQubits)]))
-
-circuit()
-
-
-
-
-
-'''
 
 import numpy as np
 import pennylane as qml
 import torch
 import sklearn.datasets
-
-# n_qubits = 2
-
-
-# @qml.qnode(dev)
-# def qnode(inputs, weights):
-#     qml.templates.AngleEmbedding(inputs, wires=range(n_qubits))
-#     print(weights)
-#     qml.templates.StronglyEntanglingLayers(weights, wires=range(n_qubits))
-#     return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1))
-
-
 
 n_samples = 100
 
@@ -150,6 +102,31 @@ class Net(nn.Module):
 class_model = Net()
 
 print(class_model(normalized))
+opt = torch.optim.SGD(class_model.parameters() , lr = 0.5)
+loss_func = torch.nn.CrossEntropyLoss()
+
+
+samples = 100
+epochs = 8
+batch_size = 1
+batches = samples // batch_size
+
+for epoch in range(epochs):
+    for i,datas in enumerate(train_loader):
+        opt.zero_grad()
+        data,target = datas
+        normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
+        normalized = torch.Tensor(normalized).view(1,-1)
+        out = class_model(normalized)
+        loss = loss_func(out, target)
+        print(loss)
+        print(target)
+        print(out)
+        loss.backward()
+        opt.step()
+        
+
+
 '''
 
 
