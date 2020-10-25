@@ -34,7 +34,9 @@ from qiskit.circuit.library.standard_gates import HGate
 # features would be non-differentiable with pennylanes framework
 #however we need gradients only up-to Unitary gate
 
-
+## TODO ! 
+# Neural network layers will be replaced by swap gate, and
+# the autoencoder paper will be embodided
 
 
 import numpy as np
@@ -62,71 +64,181 @@ train_loader = torch.utils.data.DataLoader(X_train, batch_size=1, shuffle=True)
 data,target = iter(train_loader).__next__()
 normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
 
-n_qubits = int(np.ceil(np.log2(normalized.shape[0])))
+# n_qubits = int(np.ceil(np.log2(normalized.shape[0])))
 
 normalized = torch.Tensor(normalized).view(1,-1)
-
+n_qubits=16
 dev = qml.device("default.qubit", wires=n_qubits)
-
-
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         
+        
+        
         @qml.qnode(dev)
-        def my_qnode(inputs, weights_0):
-            qml.templates.AmplitudeEmbedding(inputs,[ i for i in range(n_qubits) ])
-            qml.RX(inputs[0], wires = 0)
-            qml.Rot(*weights_0, wires = 2)
-            return qml.probs([i for i in range(n_qubits)])
-            # return qml.expval(qml.PauliZ([0])) , qml.expval(qml.PauliZ([1]))
-        weight_shapes = {"weights_0": 3}
+        def my_circuit(inputs,weights,weights_1):
+            self.embed(inputs)
+            
+            for i in range(n_qubits):
+                print(*weights[0, i])
+                qml.Rot(*weights[0, i], wires = i)
+            for i in range(n_qubits):
+                ctr=0
+                for j in range(n_qubits):
+                    
+                    if(i==j):
+                        continue
+                    else:
+                        qml.CRot( *weights_1[i,ctr]  ,wires= [i,j])
+                        ctr += 1
+            for i in range(n_qubits):
+                qml.Rot(*weights[1, i], wires = i)
+            #         print(i)
+            return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1)),qml.expval(qml.PauliZ(2)), qml.expval(qml.PauliZ(3))
+            # return qml.probs(range(n_qubits))
         
+        weight_shapes = {"weights": ( 2 , n_qubits, 3),"weights_1": (n_qubits,n_qubits-1 ,3)}
         
-        
-        self.qlayer = qml.qnn.TorchLayer(my_qnode, weight_shapes)
-        self.clayer1 = torch.nn.Linear(16,12)
-        self.clayer2 = torch.nn.Linear(12,10)
+        self.qlayer = qml.qnn.TorchLayer(my_circuit, weight_shapes)
+        self.clayer1 = torch.nn.Linear(4,2)
+        self.clayer2 = torch.nn.Linear(2,2)
         self.softmax = torch.nn.Softmax(dim=1)
-        self.seq = torch.nn.Sequential(self.clayer1, self.qlayer)
-
+        #self.seq = torch.nn.Sequential(self.qlayer, self.clayer1)
+    @qml.template
+    def embed(self,inputs):
+   
+        # qml.templates.AngleEmbedding(inputs,[ i for i in range(4) ])
+        qml.templates.AngleEmbedding(inputs,[ i for i in range(16) ])
+        
+        
+    
     def forward(self, x):
-        x = self.qlayer(x)
+
+        
+        x =  self.qlayer(x)
+        
         x = self.clayer1(x)
+        
         x = self.clayer2(x)
+        
         x = self.softmax(x)
+        
+        # For now, NN layers are just dummy
         return x
+
+
+
+        
+dev_embedding = qml.device("default.qubit", wires=n_qubits,shots = 1000)
+
+@qml.qnode(dev_embedding)
+def amp_embedding(inp):
+    qml.templates.AmplitudeEmbedding(inp,[ i for i in range(n_qubits) ] , normalize=True)
+    return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1)),qml.expval(qml.PauliZ(2)), qml.expval(qml.PauliZ(3))
+
 
 
 class_model = Net()
 
-print(class_model(normalized))
-opt = torch.optim.SGD(class_model.parameters() , lr = 0.5)
+opt = torch.optim.SGD(class_model.parameters() , lr = 0.1)
 loss_func = torch.nn.CrossEntropyLoss()
 
-
 samples = 100
-epochs = 8
+epochs = 50
 batch_size = 1
 batches = samples // batch_size
-
+loss_list = []
 for epoch in range(epochs):
+    total_loss = []
     for i,datas in enumerate(train_loader):
         opt.zero_grad()
         data,target = datas
-        normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
+        normalized = data.view(1,-1).numpy().reshape(-1)
         normalized = torch.Tensor(normalized).view(1,-1)
-        out = class_model(normalized)
+        # res = amp_embedding(normalized.numpy().reshape(-1))     
+        # res = res.astype('double') 
+        # res = torch.tensor(res).view(1,-1).float()
+        # print('--')
+        # print(res)
+        # out = class_model(res )
+        out = class_model(normalized )
+        
         loss = loss_func(out, target)
-        print(loss)
-        print(target)
-        print(out)
+
         loss.backward()
         opt.step()
+        total_loss.append(loss.item())
+    break
+    loss_list.append(sum(total_loss)/len(total_loss))
+    print('Training [{:.0f}%]\tLoss: {:.4f}'.format(100. * (epoch + 1) / epochs, loss_list[-1]))
+    
+
+
+
+
+n_samples = 50
+
+X_test = datasets.MNIST(root='./data', train=False, download=True,
+                        transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor()]))
+
+idx = np.append(np.where(X_test.targets == 0)[0][:n_samples], 
+                np.where(X_test.targets == 1)[0][:n_samples])
+
+X_test.data = X_test.data[idx]
+X_test.targets = X_test.targets[idx]
+
+test_loader = torch.utils.data.DataLoader(X_test, batch_size=1, shuffle=True)
+
+
+
+
+
+with torch.no_grad():
+    
+    correct = 0
+    for batch_idx, (data, target) in enumerate(test_loader):
+        normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
+        normalized = torch.Tensor(normalized).view(1,-1)
+        output = class_model(normalized)
+        print(output)
+        pred = output.argmax(dim=1, keepdim=True) 
+        correct += pred.eq(target.view_as(pred)).sum().item()
         
+        loss = loss_func(output, target)
+        total_loss.append(loss.item())
+        
+    print('Performance on test data:\n\tLoss: {:.4f}\n\tAccuracy: {:.1f}%'.format(
+        sum(total_loss) / len(total_loss),
+        correct / len(test_loader) * 100)
+        )
 
+    
+n_samples_show = 6
+count = 0
+fig, axes = plt.subplots(nrows=1, ncols=n_samples_show, figsize=(10, 3))
 
+class_model.eval()
+with torch.no_grad():
+    for batch_idx, (data, target) in enumerate(test_loader):
+        if count == n_samples_show:
+            break
+        
+        normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
+        normalized = torch.Tensor(normalized).view(1,-1)
+        
+        output = class_model(normalized)
+        
+        pred = output.argmax(dim=1, keepdim=True) 
+
+        axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
+
+        axes[count].set_xticks([])
+        axes[count].set_yticks([])
+        axes[count].set_title('Predicted {}'.format(pred.item()))
+        
+        count +=1  
+    
 '''
 
 
