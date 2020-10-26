@@ -64,10 +64,10 @@ train_loader = torch.utils.data.DataLoader(X_train, batch_size=1, shuffle=True)
 data,target = iter(train_loader).__next__()
 normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
 
-# n_qubits = int(np.ceil(np.log2(normalized.shape[0])))
+n_qubits = int(np.ceil(np.log2(normalized.shape[0])))
 
 normalized = torch.Tensor(normalized).view(1,-1)
-n_qubits=16
+#n_qubits=7 
 dev = qml.device("default.qubit", wires=n_qubits)
 
 class Net(nn.Module):
@@ -75,13 +75,15 @@ class Net(nn.Module):
         super(Net, self).__init__()
         
         
+        # inputs shpould be a keyword arguement, then it becomes 
+        #non-differentiable and the network suits with autograd
         
         @qml.qnode(dev)
-        def my_circuit(inputs,weights,weights_1):
+        def my_circuit(weights,weights_1,inputs = False):
             self.embed(inputs)
             
             for i in range(n_qubits):
-                print(*weights[0, i])
+                
                 qml.Rot(*weights[0, i], wires = i)
             for i in range(n_qubits):
                 ctr=0
@@ -101,16 +103,15 @@ class Net(nn.Module):
         weight_shapes = {"weights": ( 2 , n_qubits, 3),"weights_1": (n_qubits,n_qubits-1 ,3)}
         
         self.qlayer = qml.qnn.TorchLayer(my_circuit, weight_shapes)
+        
         self.clayer1 = torch.nn.Linear(4,2)
         self.clayer2 = torch.nn.Linear(2,2)
         self.softmax = torch.nn.Softmax(dim=1)
         #self.seq = torch.nn.Sequential(self.qlayer, self.clayer1)
     @qml.template
     def embed(self,inputs):
-   
-        # qml.templates.AngleEmbedding(inputs,[ i for i in range(4) ])
-        qml.templates.AngleEmbedding(inputs,[ i for i in range(16) ])
-        
+        #qml.QubitStateVector(inputs, wires = range(n_qubits))
+        qml.templates.AmplitudeEmbedding(inputs, wires = range(n_qubits), normalize = True)
         
     
     def forward(self, x):
@@ -132,10 +133,10 @@ class Net(nn.Module):
         
 dev_embedding = qml.device("default.qubit", wires=n_qubits,shots = 1000)
 
-@qml.qnode(dev_embedding)
-def amp_embedding(inp):
-    qml.templates.AmplitudeEmbedding(inp,[ i for i in range(n_qubits) ] , normalize=True)
-    return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1)),qml.expval(qml.PauliZ(2)), qml.expval(qml.PauliZ(3))
+@qml.qnode(dev)
+def Embedding_circuit(f=None):
+    qml.templates.AmplitudeEmbedding(features=f, wires=range(4),normalize = True)
+    return qml.probs(range(n_qubits))
 
 
 
@@ -149,12 +150,15 @@ epochs = 50
 batch_size = 1
 batches = samples // batch_size
 loss_list = []
+
+
 for epoch in range(epochs):
     total_loss = []
     for i,datas in enumerate(train_loader):
         opt.zero_grad()
         data,target = datas
         normalized = data.view(1,-1).numpy().reshape(-1)
+        #intermed_val = Embedding_circuit(normalized.detach().clone())
         normalized = torch.Tensor(normalized).view(1,-1)
         # res = amp_embedding(normalized.numpy().reshape(-1))     
         # res = res.astype('double') 
@@ -162,12 +166,25 @@ for epoch in range(epochs):
         # print('--')
         # print(res)
         # out = class_model(res )
+        start = timeit.time.time()
         out = class_model(normalized )
         
+        end = timeit.time.time()
+        print('Time elapsed: {:2.2f%}' ,end-start)
+        
+        start = timeit.time.time()
         loss = loss_func(out, target)
-
+        end = timeit.time.time()
+        print('Time elapsed: {:2.2f%}' ,end-start)
+        print(out)
+        start = timeit.time.time()
         loss.backward()
+        end = timeit.time.time()
+        print( 'Time elapsed: {:.2f}'.format(end-start))
+        start = timeit.time.time()
         opt.step()
+        end = timeit.time.time()
+        print('Time elapsed: {:2.2f%}' ,end-start)
         total_loss.append(loss.item())
     break
     loss_list.append(sum(total_loss)/len(total_loss))
