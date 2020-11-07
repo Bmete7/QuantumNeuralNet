@@ -26,7 +26,7 @@ from torchvision import datasets,transforms
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
-
+import random
 import pennylane as qml
 import qiskit
 from qiskit.visualization import *
@@ -34,6 +34,15 @@ from qiskit.visualization import *
 import sklearn.datasets
 import matplotlib.pyplot as plt
 import timeit
+from torch.utils.tensorboard import SummaryWriter
+
+
+
+import torchvision
+
+
+
+
 
 # 
 
@@ -50,11 +59,17 @@ import timeit
 
 #Ask Irene if its meaningful to visualize encoded/trained latent space, and the output in the presentation?
 
-
+## CHANGE DEVICE FROM DEFAULT TO GAUSSIAN
 
 # %% Dataset + preprocessing 
-n_samples = 100
-# for4x4 images
+
+# setting1
+# n_samples = 200
+
+# setting2
+n_samples = 20
+# for4x4 
+
 # X_train = datasets.MNIST(root='./data', train=True, download=True,
 # transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor() , 
 # transforms.Normalize((0.5,) , (1,))
@@ -67,12 +82,13 @@ transforms.Normalize((0.5,) , (1,))
 ]))
 
 
-# Leaving only labels 0 and 1, only for now
-idx = np.append(np.where(X_train.targets == 0)[0][:n_samples], 
-                np.where(X_train.targets == 1)[0][:n_samples])
+# Leaving only labels 0 and 1, only for now, we dont need it anymore
+# idx = np.append(np.where(X_train.targets == 0)[0][:n_samples], 
+#                 np.where(X_train.targets == 1)[0][:n_samples])
 
-X_train.data = X_train.data[idx]
-X_train.targets = X_train.targets[idx]
+
+X_train.data = X_train.data[:n_samples]
+X_train.targets = X_train.targets[:n_samples]
 
 train_loader = torch.utils.data.DataLoader(X_train, batch_size=1, shuffle=True)
 
@@ -99,8 +115,10 @@ class Net(nn.Module):
         # then it becomes non-differentiable and the network suits with autograd
         self.training_mode = True
         @qml.qnode(dev)
-        def q_circuit(weights_r ,weights_cr ,inputs = False):
+        def q_circuit(weights_r ,weights_cr,weights_st ,inputs = False):
             self.embedding(inputs)
+            
+            qml.templates.StronglyEntanglingLayers(weights_st, range(latent_space_size+auxillary_qubit_size,n_qubits))
             
             # Add entangling layer ??
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
@@ -128,8 +146,8 @@ class Net(nn.Module):
                 #qml.expval(qml.PauliZ(0))
                 return qml.probs(range(auxillary_qubit_size+latent_space_size,n_qubits ))
     
-        weight_shapes = {"weights_r": (2 , training_qubits_size, 3),"weights_cr": (training_qubits_size,training_qubits_size-1 ,3)}
-        
+        weight_shapes = {"weights_r": (2 , training_qubits_size, 3),"weights_cr": (training_qubits_size,training_qubits_size-1 ,3), "weights_st":  (3,training_qubits_size,3)}
+        weights_st = torch.tensor(qml.init.strong_ent_layers_uniform(3, training_qubits_size), requires_grad=True)
         self.qlayer = qml.qnn.TorchLayer(q_circuit, weight_shapes)
         self.DRAW_CIRCUIT_FLAG = True
 # =============================================================================
@@ -154,7 +172,8 @@ class Net(nn.Module):
         # When normalize flag is True, features act like a prob. distribution
         
         # print(inputs)
-        qml.templates.AmplitudeEmbedding(inputs, wires = range(latent_space_size+auxillary_qubit_size,n_qubits), normalize = True,pad=(8+0.j))
+        qml.templates.AmplitudeEmbedding(inputs, wires = range(latent_space_size+auxillary_qubit_size,n_qubits), normalize = True,pad=(0.j))
+        
         #qml.QubitStateVector(inputs, wires = range(n_qubits))
         
     @qml.template
@@ -183,6 +202,7 @@ class Net(nn.Module):
 # %%
 
 def Fidelity_loss(measurements):
+    
     fidelity = (2 * measurements - 1.00)
     return torch.log(1-fidelity)
 
@@ -190,14 +210,20 @@ def Fidelity_loss(measurements):
 # %%
 
 model = Net()
-learning_rate = 0.1 
-samples = 100
-epochs = 1
-batch_size = 1
-batches = samples // batch_size
+
+# Setting1
+# learning_rate = 0.05 
+# epochs = 10
+
+
+# Setting2
+learning_rate = 0.05
+epochs = 3
+
 loss_list = []
 
-opt = torch.optim.SGD(model.parameters() , lr = learning_rate )
+# opt = torch.optim.SGD(model.parameters() , lr = learning_rate )
+opt = torch.optim.Adam(model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
 # loss_func = torch.nn.CrossEntropyLoss() # TODO replaced with fidelity
 loss_func = Fidelity_loss
 
@@ -230,20 +256,28 @@ for epoch in range(epochs):
         normalized = torch.Tensor(normalized).view(1,-1)
         if(padding_op):
             new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
-        new_arg = torch.Tensor(new_arg).view(1,-1)
+        
+            new_arg = torch.Tensor(new_arg).view(1,-1)
         
         
-        if(i%10 == 0):
-            start_time_in = timeit.time.time()
-        out = model(new_arg,True)
         
+        #     start_time_in = timeit.time.time()
+        if(padding_op):
+            out = model(new_arg,True)
+        else:
+            out = model(normalized,True)
+        
+        
+        # su measurementi bi print ettir
         loss = loss_func(out)    
         loss.backward()
-        opt.step()
         if(i%10 == 0):
-            end_time_in = timeit.time.time()
-            # print(out)
-            print('Time elapsed: {:.2f}'.format(end_time_in-start_time_in))
+            print(out)
+        opt.step()
+        # if(i%10 == 9):
+        #     end_time_in = timeit.time.time()
+        #     #print(out)
+        #     print('Time elapsed: {:.2f}'.format(end_time_in-start_time_in))
         
     
         total_loss.append(loss.item())
@@ -254,20 +288,20 @@ for epoch in range(epochs):
     
 
 
-
 # %%
-n_samples = 20
+n_samples = 10
 
 # X_test = datasets.MNIST(root='./data', train=False, download=True,
 #                         transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor()]))
 
 X_test = datasets.MNIST(root='./data', train=False, download=True,
                         transform=transforms.Compose([transforms.Resize((6,6)),transforms.ToTensor()]))
-idx = np.append(np.where(X_test.targets == 0)[0][:n_samples], 
-                np.where(X_test.targets == 1)[0][:n_samples])
+# We do not need it anymore
+# idx = np.append(np.where(X_test.targets == 0)[0][:n_samples], 
+#                 np.where(X_test.targets == 1)[0][:n_samples])
 
-X_test.data = X_test.data[idx]
-X_test.targets = X_test.targets[idx]
+X_test.data = X_test.data[:n_samples]
+X_test.targets = X_test.targets[:n_samples]
 
 test_loader = torch.utils.data.DataLoader(X_test, batch_size=1, shuffle=True)
 
@@ -275,6 +309,75 @@ test_loader = torch.utils.data.DataLoader(X_test, batch_size=1, shuffle=True)
 # %%
 
 test_loss = nn.MSELoss()
+
+    
+def visualize(out,data):
+    
+    #unnormalizing the output:
+    
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 3))
+    # if(padding_op):
+    #     print((out[:pad_amount].shape))
+    #     unnormed_out = (out[0][:(len(output[0]) - pad_amount)].view(1,-1)  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
+    # else:
+    #     unnormed_out = (out  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
+    
+    data = data.view(1,1,training_qubits_size,-1)
+    
+    count = 0
+    axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
+
+    axes[count].set_xticks([])
+    axes[count].set_yticks([])
+    out = out.view(1,1,training_qubits_size,-1)
+    count+=1
+    axes[count].imshow(out[0].numpy().squeeze(), cmap='gray')
+
+    axes[count].set_xticks([])
+    axes[count].set_yticks([])
+    plt.show()
+
+
+
+
+# # %%
+
+# def matplotlib_imshow(img, one_channel=False):
+#     if one_channel:
+#         img = img.mean(dim=0)
+#     img = img / 2 + 0.5     # unnormalize
+#     npimg = img.numpy()
+#     if one_channel:
+#         plt.imshow(npimg, cmap="Greys")
+#     else:
+#         plt.imshow(np.transpose(npimg, (1, 2, 0)))
+        
+# img_grid = torchvision.utils.make_grid(output.view(4,4))
+
+# # show images
+# matplotlib_imshow(img_grid, one_channel=True)
+
+# writer = SummaryWriter('runs/fashion_mnist_experiment_1')
+# writer.add_image('four_fashion_mnist_images', img_grid)
+
+# writer.add_graph(model, data)
+# writer.close()
+# %% Some experiments, not project related
+
+
+
+def visualize_state_vec(output , string):
+    rep = output.view(1,-1)
+    # xPoints = [ str(np.binary_repr(i)) for i in range(0,training_qubits_size**2)]
+    xPoints = [ i for i in range(0,training_qubits_size**2)]
+    yPoints = [rep[0,i] for i in range(0,training_qubits_size**2)]
+    plt.bar(xPoints, yPoints)
+    plt.suptitle(string)
+    plt.ylim(top = 1) #xmax is your value
+    plt.ylim(bottom = 0.00) #xmax is your value
+    plt.show()
+    
+
 
 # %%
 with torch.no_grad():
@@ -284,16 +387,22 @@ with torch.no_grad():
         # normalized = torch.Tensor(normalized).view(1,-1)
         
         normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
-        
+            
         normalized = torch.Tensor(normalized).view(1,-1)
         if(padding_op):
             new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
-        new_arg = torch.Tensor(new_arg).view(1,-1)
+            new_arg = torch.Tensor(new_arg).view(1,-1)
         
-        output = model(new_arg, training_mode = False)        
-        loss = test_loss((new_arg**2).view(-1), output.view(-1))
-        visualize(output, data)
-        if(batch_idx == 1):
+            output = model(new_arg, training_mode = False)        
+            loss = test_loss((new_arg**2).view(-1), output.view(-1))
+        else:
+            output = model(normalized, training_mode = False)        
+            loss = test_loss((normalized**2).view(-1), output.view(-1))
+        visualize((output)**(1/2), normalized)
+        visualize_state_vec(output , 'output' + str(batch_idx))
+        visualize_state_vec(normalized**2, 'data' + str(batch_idx))
+        if(batch_idx == 2):
+            break
             print((normalized**2).view(-1))
             print(output.view(-1))
         total_loss.append(loss.item())
@@ -304,32 +413,3 @@ with torch.no_grad():
         sum(total_loss) / len(total_loss),
         correct / len(test_loader) * 100)
         )
-
-    # %%
-    
-def visualize(out,data):
-    
-    #unnormalizing the output:
-    
-    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 3))
-    if(padding_op):
-        print((out[:pad_amount].shape))
-        unnormed_out = (out[0][:(len(output[0]) - pad_amount)].view(1,-1)  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
-    else:
-        unnormed_out = (out  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
-    
-    data = data.view(1,1,training_qubits_size,-1)
-    
-    count = 0
-    axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
-
-    axes[count].set_xticks([])
-    axes[count].set_yticks([])
-
-    count+=1
-    axes[count].imshow(unnormed_out[0].numpy().squeeze(), cmap='gray')
-
-    axes[count].set_xticks([])
-    axes[count].set_yticks([])
-
-
