@@ -41,19 +41,31 @@ import timeit
 # however we need gradients only up-to Unitary gate
 
 # TODO ! 
-# 1- Neural network layers will be replaced by swap gate
-# 2- Loss function(CrossEntropy) will be replaced with fidelity (SWAP test)
+# 1+ Neural network layers will be replaced by swap gate
+# 2+ Loss function(CrossEntropy) will be replaced with fidelity (SWAP test)
+# + Maybe we can optimize with pennyLane instead of Torch? Look into it.
 
-# ?- Maybe we can optimize with pennyLane instead of Torch? Look into it.
+
+# In testing, you measure the training qubits, in training you only measure the ancilla
+
+#Ask Irene if its meaningful to visualize encoded/trained latent space, and the output in the presentation?
+
 
 
 # %% Dataset + preprocessing 
 n_samples = 100
+# for4x4 images
+# X_train = datasets.MNIST(root='./data', train=True, download=True,
+# transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor() , 
+# transforms.Normalize((0.5,) , (1,))
+# ]))
+
 
 X_train = datasets.MNIST(root='./data', train=True, download=True,
-transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor() , 
+transform=transforms.Compose([transforms.Resize((6,6)),transforms.ToTensor() , 
 transforms.Normalize((0.5,) , (1,))
 ]))
+
 
 # Leaving only labels 0 and 1, only for now
 idx = np.append(np.where(X_train.targets == 0)[0][:n_samples], 
@@ -80,22 +92,23 @@ dev = qml.device("default.qubit", wires=n_qubits)
 # %% Whole network is defined within this class
 class Net(nn.Module):
     def __init__(self):
+    
         super(Net, self).__init__()
         
         # inputs shpould be a keyword arguement, for AmplitudeEmbedding
         # then it becomes non-differentiable and the network suits with autograd
-        
+        self.training_mode = True
         @qml.qnode(dev)
         def q_circuit(weights_r ,weights_cr ,inputs = False):
             self.embedding(inputs)
             
             # Add entangling layer ??
-            
-            #qml.Hadamard(wires= 0)
-            #Definition of unitary gate of the programmable circuit
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
                 qml.Rot(*weights_r[0, ind], wires = i)
+            #Definition of unitary gate of the programmable circuit
+            for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
+                ind = i - (latent_space_size + auxillary_qubit_size)
                 ctr=0
                 for j in range(latent_space_size+auxillary_qubit_size , n_qubits):
                     ind_contr = j - (latent_space_size + auxillary_qubit_size)
@@ -104,14 +117,21 @@ class Net(nn.Module):
                     else:
                         qml.CRot( *weights_cr[ind_contr,ctr]  ,wires= [i,j])
                         ctr += 1
+            for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
+                ind = i - (latent_space_size + auxillary_qubit_size)
                 qml.Rot(*weights_r[1, ind], wires = i)
-                qml.SWAP(wires = range(auxillary_qubit_size, auxillary_qubit_size + 2*latent_space_size))
-            # return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1)),qml.expval(qml.PauliZ(2)), qml.expval(qml.PauliZ(3)),qml.expval(qml.PauliZ(4))
-            return qml.probs(range(n_qubits))
-        
+
+            if(self.training_mode==True):
+                self.SWAP_Test()
+                return qml.expval(qml.PauliZ(0))
+            else:
+                #qml.expval(qml.PauliZ(0))
+                return qml.probs(range(auxillary_qubit_size+latent_space_size,n_qubits ))
+    
         weight_shapes = {"weights_r": (2 , training_qubits_size, 3),"weights_cr": (training_qubits_size,training_qubits_size-1 ,3)}
         
         self.qlayer = qml.qnn.TorchLayer(q_circuit, weight_shapes)
+        self.DRAW_CIRCUIT_FLAG = True
 # =============================================================================
 #         4 -Time elapsed: 0.50
 #         5 -Time elapsed: 1.07
@@ -120,9 +140,9 @@ class Net(nn.Module):
 #         8- Time elapsed: 5.44
 # =============================================================================
         # Those should be replaced with the swap test
-        self.clayer1 = torch.nn.Linear(64,2)
-        self.clayer2 = torch.nn.Linear(2,2)
-        self.softmax = torch.nn.Softmax(dim=1)
+        # self.clayer1 = torch.nn.Linear(64,2)
+        # self.clayer2 = torch.nn.Linear(2,2)
+        # self.softmax = torch.nn.Softmax(dim=1)
         #self.seq = torch.nn.Sequential(self.qlayer, self.clayer1)
     @qml.template
     def embedding(self,inputs):
@@ -132,25 +152,45 @@ class Net(nn.Module):
         # - B (Trash State)
         # - A (Latent Space)
         # When normalize flag is True, features act like a prob. distribution
-        qml.templates.AmplitudeEmbedding(inputs, wires = range(latent_space_size+auxillary_qubit_size,n_qubits), normalize = True)
+        
+        # print(inputs)
+        qml.templates.AmplitudeEmbedding(inputs, wires = range(latent_space_size+auxillary_qubit_size,n_qubits), normalize = True,pad=(8+0.j))
         #qml.QubitStateVector(inputs, wires = range(n_qubits))
         
-    def forward(self, x):
-
-        x =  self.qlayer(x)
-        print(x)
-        print('****')
-        x = self.clayer1(x)
-        x = self.clayer2(x)
-        x = self.softmax(x)
+    @qml.template
+    def SWAP_Test(self):
         
-        # For now, NN layers are just dummy
+        qml.Hadamard(wires = 0)
+        for i in range(auxillary_qubit_size, latent_space_size + auxillary_qubit_size):
+            qml.CSWAP(wires = [0, i, i + latent_space_size])
+        qml.Hadamard(wires = 0)
+        
+    def forward(self, x, training_mode = True):
+        self.training_mode = training_mode
+        x =  self.qlayer(x)
+        
+        #printing once before training
+        if(self.DRAW_CIRCUIT_FLAG):
+            self.DRAW_CIRCUIT_FLAG = False
+            
+            # Within Torch Object, you reach the circuit with TorchObj.qnode
+            print(self.qlayer.qnode.draw())
+
+        
         return x
+
+
+# %%
+
+def Fidelity_loss(measurements):
+    fidelity = (2 * measurements - 1.00)
+    return torch.log(1-fidelity)
+
 
 # %%
 
 model = Net()
-learning_rate = 0.5
+learning_rate = 0.1 
 samples = 100
 epochs = 1
 batch_size = 1
@@ -158,7 +198,20 @@ batches = samples // batch_size
 loss_list = []
 
 opt = torch.optim.SGD(model.parameters() , lr = learning_rate )
-loss_func = torch.nn.CrossEntropyLoss() # TODO replaced with fidelity
+# loss_func = torch.nn.CrossEntropyLoss() # TODO replaced with fidelity
+loss_func = Fidelity_loss
+
+
+# TODO : save the initial parameters, then look at optimized ones.
+
+pad_amount = int(2 ** (np.ceil(np.log2(training_qubits_size ** 2))) - training_qubits_size ** 2)
+padding_op = False
+if(pad_amount > 0 ):
+    padding_op = True
+
+pad_tensor  = torch.zeros(pad_amount)
+
+
 
 # %%
 for epoch in range(epochs):
@@ -168,21 +221,32 @@ for epoch in range(epochs):
         opt.zero_grad()
         
         data,target = datas
+        # normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
+        # normalized = torch.Tensor(normalized).view(1,-1)
         # They do not have to be normalized since AmplitudeEmbeddings does that
-        normalized = data.view(1,-1).numpy().reshape(-1) 
+        # But maybe we need it for the loss
+        
+        normalized = np.abs(nn.functional.normalize(data.view(1,-1)).numpy()).reshape(-1)
         normalized = torch.Tensor(normalized).view(1,-1)
-
+        if(padding_op):
+            new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
+        new_arg = torch.Tensor(new_arg).view(1,-1)
         
         
-        out = model(normalized)
-        loss = loss_func(out, target)                
+        if(i%10 == 0):
+            start_time_in = timeit.time.time()
+        out = model(new_arg,True)
+        
+        loss = loss_func(out)    
         loss.backward()
         opt.step()
-        
+        if(i%10 == 0):
+            end_time_in = timeit.time.time()
+            # print(out)
+            print('Time elapsed: {:.2f}'.format(end_time_in-start_time_in))
         
     
         total_loss.append(loss.item())
-        break
     end_time = timeit.time.time()
     print('Time elapsed: {:.2f}'.format(end_time-start_time))
     loss_list.append(sum(total_loss)/len(total_loss))
@@ -192,11 +256,13 @@ for epoch in range(epochs):
 
 
 # %%
-n_samples = 1
+n_samples = 20
+
+# X_test = datasets.MNIST(root='./data', train=False, download=True,
+#                         transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor()]))
 
 X_test = datasets.MNIST(root='./data', train=False, download=True,
-                        transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor()]))
-
+                        transform=transforms.Compose([transforms.Resize((6,6)),transforms.ToTensor()]))
 idx = np.append(np.where(X_test.targets == 0)[0][:n_samples], 
                 np.where(X_test.targets == 1)[0][:n_samples])
 
@@ -206,50 +272,64 @@ X_test.targets = X_test.targets[idx]
 test_loader = torch.utils.data.DataLoader(X_test, batch_size=1, shuffle=True)
 
 
+# %%
 
+test_loss = nn.MSELoss()
 
 # %%
 with torch.no_grad():
     correct = 0
     for batch_idx, (data, target) in enumerate(test_loader):
-        normalized = data.view(1,-1).numpy().reshape(-1)
+        # normalized = data.view(1,-1).numpy().reshape(-1)
+        # normalized = torch.Tensor(normalized).view(1,-1)
+        
+        normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
+        
         normalized = torch.Tensor(normalized).view(1,-1)
+        if(padding_op):
+            new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
+        new_arg = torch.Tensor(new_arg).view(1,-1)
         
-        output = model(normalized)
-        pred = output.argmax(dim=1, keepdim=True) 
-        correct += pred.eq(target.view_as(pred)).sum().item()
-        
-        loss = loss_func(output, target)
+        output = model(new_arg, training_mode = False)        
+        loss = test_loss((new_arg**2).view(-1), output.view(-1))
+        visualize(output, data)
+        if(batch_idx == 1):
+            print((normalized**2).view(-1))
+            print(output.view(-1))
         total_loss.append(loss.item())
+
         
+        # print(normalized)
     print('Performance on test data:\n\tLoss: {:.4f}\n\tAccuracy: {:.1f}%'.format(
         sum(total_loss) / len(total_loss),
         correct / len(test_loader) * 100)
         )
 
     # %%
-n_samples_show = 6
-count = 0
-fig, axes = plt.subplots(nrows=1, ncols=n_samples_show, figsize=(10, 3))
+    
+def visualize(out,data):
+    
+    #unnormalizing the output:
+    
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 3))
+    if(padding_op):
+        print((out[:pad_amount].shape))
+        unnormed_out = (out[0][:(len(output[0]) - pad_amount)].view(1,-1)  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
+    else:
+        unnormed_out = (out  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
+    
+    data = data.view(1,1,training_qubits_size,-1)
+    
+    count = 0
+    axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
 
-model.eval()
-with torch.no_grad():
-    for batch_idx, (data, target) in enumerate(test_loader):
-        if count == n_samples_show:
-            break
-        
-        normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
-        normalized = torch.Tensor(normalized).view(1,-1)
-        
-        output = model(normalized)
-        
-        pred = output.argmax(dim=1, keepdim=True) 
+    axes[count].set_xticks([])
+    axes[count].set_yticks([])
 
-        axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
+    count+=1
+    axes[count].imshow(unnormed_out[0].numpy().squeeze(), cmap='gray')
 
-        axes[count].set_xticks([])
-        axes[count].set_yticks([])
-        axes[count].set_title('Predicted {}'.format(pred.item()))
-        
-        count +=1  
+    axes[count].set_xticks([])
+    axes[count].set_yticks([])
+
 
