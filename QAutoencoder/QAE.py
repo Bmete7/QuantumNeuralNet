@@ -2,18 +2,15 @@
 """
 Created on Mon Oct 19 14:26:18 2020
 
-@author: burak
-"""
+@author: Burak Mete, M.Sc Informatik, Technische Universitat Muenchen
 
+"""
 
 
 '''
 TODO: 
-    DONE + import MNIST DATASET, transformit to 4x4 (Check if 8x8 has eligible compute efficiency also)
-    DONE + Do a Quantum State Embedding, Each pixel-a qubit(or think of a more intelligent solution)
-    DONE + Build the programmable circuit represented on the paper, use the rotation gate approach
-    - Train the network and get some results
-    Exp. 21.10.2020
+
+    All done
 
 '''
 
@@ -42,117 +39,111 @@ import torchvision
 import pandas as pd 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score
-import os
-import torch
-import pandas as pd
+
+
 from skimage import io, transform
-import numpy as np
-import matplotlib.pyplot as plt
+
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
-# %%
 
-dataset = pd.read_csv('../dataset/iris.csv')
+# %% PART 1a ) This is the IRIS Dataset implementation. This dataset is used for the development phase
+# Since it has a very low dimensionality, easy to train and easy to visualize
 
-# transform species to numerics
-dataset.loc[dataset.species=='Iris-setosa', 'species'] = 0
-dataset.loc[dataset.species=='Iris-versicolor', 'species'] = 1
-dataset.loc[dataset.species=='Iris-virginica', 'species'] = 2
-
-
-train_X, test_X, train_y, test_y = train_test_split(dataset[dataset.columns[0:4]].values,
-                                                    dataset.species.values, test_size=0.8)
-
-# wrap up with Variable in pytorch
-traindata = (torch.Tensor(train_X).float())
-testdata = (torch.Tensor(test_X).float())
-
-class IRISDataset(Dataset):
-    """Face Landmarks dataset."""
-
-    def __init__(self, traindata,transform=None):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        # self.traindata = traindata
-        self.traindata = torch.cat( ( torch.cat(  (traindata.clone().detach(),traindata), dim = 1) ,  torch.cat(  (traindata.clone().detach(),traindata),dim = 1 )) , dim = 1)
-        # self.traindata  = traindata
-        self.transform = transform
-
-    def __len__(self):
-        # return len(self.traindata)
-        return 1
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        
-        data = self.traindata[idx]
-         
-        
-        
-        sample = {'data': data}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-myData = IRISDataset(traindata)
-
-
-dataloader = DataLoader(myData)
-
-
-
+# =============================================================================
+# dataset = pd.read_csv('../dataset/iris.csv')
+# 
+# # transform species to numerics
+# dataset.loc[dataset.species=='Iris-setosa', 'species'] = 0
+# dataset.loc[dataset.species=='Iris-versicolor', 'species'] = 1
+# dataset.loc[dataset.species=='Iris-virginica', 'species'] = 2
+# 
+# 
+# train_X, test_X, train_y, test_y = train_test_split(dataset[dataset.columns[0:4]].values,
+#                                                     dataset.species.values, test_size=0.8)
+# 
+# # wrap up with Variable in pytorch
+# traindata = (torch.Tensor(train_X).float())
+# testdata = (torch.Tensor(test_X).float())
+# 
+# class IRISDataset(Dataset):
+#     """Face Landmarks dataset."""
+# 
+#     def __init__(self, traindata,transform=None):
+#         """
+#         Args:
+#             csv_file (string): Path to the csv file with annotations.
+#             root_dir (string): Directory with all the images.
+#             transform (callable, optional): Optional transform to be applied
+#                 on a sample.
+#         """
+#         # self.traindata = traindata
+#         self.traindata = torch.cat( ( torch.cat(  (traindata.clone().detach(),traindata), dim = 1) ,  torch.cat(  (traindata.clone().detach(),traindata),dim = 1 )) , dim = 1)
+#         # self.traindata  = traindata
+#         self.transform = transform
+# 
+#     def __len__(self):
+#         # return len(self.traindata)
+#         return 1
+#     def __getitem__(self, idx):
+#         if torch.is_tensor(idx):
+#             idx = idx.tolist()
+# 
+#         
+#         data = self.traindata[idx]
+#          
+#         
+#         
+#         sample = {'data': data}
+# 
+#         if self.transform:
+#             sample = self.transform(sample)
+# 
+#         return sample
+# myData = IRISDataset(traindata)
+# 
+# 
+# dataloader = DataLoader(myData)
+# =============================================================================
 
 # %% Dataset + preprocessing 
 
-# setting1
-# n_samples = 200
 
-test_loss = nn.MSELoss()
-# setting2
-n_samples = 2
-# for4x4 
-img_shape = 4
+n_samples = 30
+img_shape = 8
+batch_size = 1
+
 # X_train = datasets.MNIST(root='./data', train=True, download=True,
 # transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor() , 
 # transforms.Normalize((0.5,) , (1,))
 # ]))
 
-
 X_train = datasets.MNIST(root='./data', train=True, download=True,
 transform=transforms.Compose([transforms.Resize((img_shape,img_shape)),transforms.ToTensor() 
 ]))
-
-
-# Leaving only labels 0 and 1, only for now, we dont need it anymore
-# idx = np.append(np.where(X_train.targets == 0)[0][:n_samples], 
-#                 np.where(X_train.targets == 1)[0][:n_samples])
-
-
+# We actually do not need the targets, since we are training an autoenc.
 X_train.data = X_train.data[:n_samples]
 X_train.targets = X_train.targets[:n_samples]
 
-train_loader = torch.utils.data.DataLoader(X_train, batch_size=1, shuffle=True)
+train_loader = torch.utils.data.DataLoader(X_train, batch_size=batch_size, shuffle=True)
+
+
+
 
 # To get number of qubits dynamically
 data,target = iter(train_loader).__next__()
 normalized = data.view(1,-1).numpy().reshape(-1)
+
+# Latent space size will be in N - lat_spa_size
 latent_space_size = 1 # TODO determined according to reference size
-auxillary_qubit_size = 1
+auxillary_qubit_size = 1 # for the SWAP Test
 
 training_qubits_size = int(np.ceil(np.log2(normalized.shape[0])))
-training_qubits_size = 4
 n_qubits = training_qubits_size + latent_space_size  + auxillary_qubit_size
-normalized = torch.Tensor(normalized).view(1,-1)
+
+#normalized = torch.Tensor(normalized).view(1,-1)
 
 dev = qml.device("default.qubit", wires=n_qubits,shots = 1000)
-# Default qubit must be changed to gaussian, since it is very slow
+normalized = torch.Tensor(normalized).view(1,-1)
+# Default qubit can be changed to gaussian, since it is very slow
 
 # %% Whole network is defined within this class
 class Net(nn.Module):
@@ -160,25 +151,38 @@ class Net(nn.Module):
     
         super(Net, self).__init__()
         
-        # inputs shpould be a keyword arguement, for AmplitudeEmbedding
+        # inputs shpould be a keyword argument, for AmplitudeEmbedding !!
         # then it becomes non-differentiable and the network suits with autograd
         self.training_mode = True
+        self.return_latent = False
+        # This class constitutes the whole network, which includes a 
+        # data embeddings, parametric quantum circuit (encoder), SWAP TEST(Calculating the fidelity)
+        # Also the conj. transpose of the encoder(decoder)
+        
+        
         @qml.qnode(dev)
         def q_circuit(weights_r ,weights_cr,weights_st ,inputs = False):
             self.embedding(inputs)
             
             # qml.templates.StronglyEntanglingLayers(weights_st, range(latent_space_size+auxillary_qubit_size,n_qubits))
             
+            
+            # These lists holds the conj tranposes of the programmable gates
+            # since we would need them in the testing
             self.first_rots = []
             self.final_rots = []
-            self.c_nots = []
             self.cnot = []
             self.wires_list = []
-            # Add entangling layer ??
+            
+            
+            # Single rotation gates for each qubit- Number of gates = N
+            # Number of parameters = N * 3 
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
                 self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, ind], wires = i)).matrix).H)
-            #Definition of unitary gate of the programmable circuit
+                
+            # Controlled rotation gates for each qubit pair- Number of gates = N(N-1)/2
+            # Number of parameters = 3* N(N-1)/2
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
                 ctr=0
@@ -190,6 +194,8 @@ class Net(nn.Module):
                         self.cnot.insert( len(self.cnot) , np.matrix(( qml.CRot( *weights_cr[ind,ctr]  ,wires= [i,j]).matrix )).H )
                         self.wires_list.insert( len(self.wires_list) , [i,j])
                         ctr += 1
+            # Single rotation gates for each qubit- Number of gates = N
+            # Number of parameters = N * 3                         
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
                 self.final_rots.append(np.matrix(qml.Rot(*weights_r[1, ind], wires = i).matrix).H)
@@ -197,10 +203,11 @@ class Net(nn.Module):
             if(self.training_mode==True):
                 self.SWAP_Test()
                 return qml.probs(0)
+            
             else:
-                #qml.expval(qml.PauliZ(0))
-                # return qml.probs(range(2*latent_space_size + auxillary_qubit_size, n_qubits ))
                 
+                
+                # In the testing, SWAP the Reference Bit and the trash states
                 qml.SWAP(wires = [1,2])
                 
                 for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
@@ -246,30 +253,31 @@ class Net(nn.Module):
         # - A (Latent Space)
         # When normalize flag is True, features act like a prob. distribution
         
-        # print(inputs)
         qml.templates.AmplitudeEmbedding(inputs, wires = range(latent_space_size+auxillary_qubit_size,n_qubits), normalize = True,pad=(0.j))
-        
         #qml.QubitStateVector(inputs, wires = range(n_qubits))
     @qml.template 
     
     @qml.template
     def SWAP_Test(self):
+        # SWAP Test measures the similarity between 2 qubits 
+        # see https://arxiv.org/pdf/quant-ph/0102001.pdf
         
         qml.Hadamard(wires = 0)
         for i in range(auxillary_qubit_size, latent_space_size + auxillary_qubit_size):
             qml.CSWAP(wires = [0, i, i + latent_space_size])
         qml.Hadamard(wires = 0)
         
-    def forward(self, x, training_mode = True):
+    def forward(self, x, training_mode = True, return_latent = False):
         self.training_mode = training_mode
+        self.return_latent = return_latent
         x =  self.qlayer(x)
         
         #printing once before training
         if(self.DRAW_CIRCUIT_FLAG):
             self.DRAW_CIRCUIT_FLAG = False
-            
-            # Within Torch Object, you reach the circuit with TorchObj.qnode
             print(self.qlayer.qnode.draw())
+            # Within Torch Object, you reach the circuit with TorchObj.qnode
+        
         if(training_mode == False):
             print(self.qlayer.qnode.draw())
 
@@ -277,7 +285,7 @@ class Net(nn.Module):
         return x
 
 
-# %%
+# %% Our implementation of the Loss
 
 def Fidelity_loss(measurements):
     
@@ -290,30 +298,29 @@ def Fidelity_loss(measurements):
 model = Net()
 
 
-# %%
-# Setting1
-# learning_rate = 0.05 
-# epochs = 10
-
-
-# Setting2
-
+# %% Model HyperParameters, batch size, number of epochs, optimizer,loss funct.
 
 learning_rate = 0.1
-learning_rate = 0.01
-
-epochs = 70
-
+epochs = 15
 loss_list = []
+
+
 
 # opt = torch.optim.SGD(model.parameters() , lr = learning_rate )
 opt = torch.optim.Adam(model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+
+
+
 # loss_func = torch.nn.CrossEntropyLoss() # TODO replaced with fidelity
 loss_func = Fidelity_loss
-# loss_func = nn.MSELoss()
 
-# TODO : save the initial parameters, then look at optimized ones.
+test_loss = nn.MSELoss()
 
+
+
+# When we have n number of pixels, where n is not a square number (i.e 6x6 img)
+# The data should be padded with 0's, since we are embedding the data to 
+# ⌈log2(n)⌉ amount of qubits
 pad_amount = int(2 ** (np.ceil(np.log2(training_qubits_size ** 2))) - normalized.view(-1,1).shape[0])
 padding_op = False
 if(pad_amount > 0 ):
@@ -323,81 +330,55 @@ if(pad_amount > 0 ):
 
 
 
-# model.qlayer.qnode_weights
 
-
-# %%
+# %%  The Training part
 
 for epoch in range(epochs):
     total_loss = []
     start_time = timeit.time.time()
     for i,datas in enumerate(train_loader):
         opt.zero_grad()
-        
-        # data = datas['data']
         # for iris dataseti
+        # data = datas['data']
         
         data, target = datas
-        # normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
-        # normalized = torch.Tensor(normalized).view(1,-1)
+        
         # They do not have to be normalized since AmplitudeEmbeddings does that
-        # But maybe we need it for the loss
+        # But we do it anyways for visualization
         
         normalized = np.abs(nn.functional.normalize((data ).view(1,-1)).numpy()).reshape(-1)
         normalized = torch.Tensor(normalized).view(1,-1)
         if(padding_op):
             new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
-        
             new_arg = torch.Tensor(new_arg).view(1,-1)
         
-        
-        
-        #     start_time_in = timeit.time.time()
         if(padding_op):
             out = model(new_arg,True)
         else:
             out = model(normalized,True)
+
         
-        
-        # su measurementi bi print ettir
-        # loss = loss_func(out)    
         loss = loss_func(out[0])
         loss.backward()
         if(i%10 == 0):
             print(out)
         opt.step()
-        # output = model(normalized, training_mode = False)        
-        # loss_test = test_loss((normalized**2).view(-1), output.view(-1))
-        
-        # print('Test loss: ', loss_test)
-        
-        # if(i%10 == 9):
-        #     end_time_in = timeit.time.time()
-        #     #print(out)
-        #     print('Time elapsed: {:.2f}'.format(end_time_in-start_time_in))
         
     
         total_loss.append(loss.item())
     end_time = timeit.time.time()
-    print('Time elapsed: {:.2f}'.format(end_time-start_time))
+    print('Time elapsed for the epoch' +  str(epoch)  + ' : {:.2f}'.format(end_time-start_time))
     loss_list.append(sum(total_loss)/len(total_loss))
     print('Training [{:.0f}%]\tLoss: {:.4f}'.format(100. * (epoch + 1) / epochs, loss_list[-1]))
     
 
 
-# %%
+# %% Test Dataloader + Preprocess
 n_samples = 10
 
-# X_test = datasets.MNIST(root='./data', train=False, download=True,
-#                         transform=transforms.Compose([transforms.Resize((4,4)),transforms.ToTensor()]))
 
-# X_test = datasets.MNIST(root='./data', train=False, download=True,
-#                         transform=transforms.Compose([transforms.Resize((6,6)),transforms.ToTensor()]))
 X_test = datasets.MNIST(root='./data', train=False, download=True,
                         transform=transforms.Compose([transforms.Resize((img_shape,img_shape)),transforms.ToTensor()]))
-# We do not need it anymore
-# idx = np.append(np.where(X_test.targets == 0)[0][:n_samples], 
-#                 np.where(X_test.targets == 1)[0][:n_samples])
 
 X_test.data = X_test.data[:n_samples]
 X_test.targets = X_test.targets[:n_samples]
@@ -407,12 +388,9 @@ test_loader = torch.utils.data.DataLoader(X_test, batch_size=1, shuffle=True)
 
 # %%
 
-
-    
 def visualize(out,data):
     
     #unnormalizing the output:
-    
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 3))
     # if(padding_op):
     #     print((out[:pad_amount].shape))
@@ -420,49 +398,21 @@ def visualize(out,data):
     # else:
     #     unnormed_out = (out  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
     
-    data = data.view(1,1,training_qubits_size,-1)
+    data = data.view(1,1,img_shape,-1)
     
-    count = 0
-    axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
+    axes[0].imshow(data[0].numpy().squeeze(), cmap='gray')
+    axes[0].set_xticks([])
+    axes[0].set_yticks([])
+    
+    out = out.view(1,1,img_shape,-1)
 
-    axes[count].set_xticks([])
-    axes[count].set_yticks([])
-    out = out.view(1,1,training_qubits_size,-1)
-    count+=1
-    axes[count].imshow(out[0].numpy().squeeze(), cmap='gray')
-
-    axes[count].set_xticks([])
-    axes[count].set_yticks([])
+    axes[1].imshow(out[0].numpy().squeeze(), cmap='gray')
+    axes[1].set_xticks([])
+    axes[1].set_yticks([])
+    
     plt.show()
 
-
-
-
-# # %%
-
-# def matplotlib_imshow(img, one_channel=False):
-#     if one_channel:
-#         img = img.mean(dim=0)
-#     img = img / 2 + 0.5     # unnormalize
-#     npimg = img.numpy()
-#     if one_channel:
-#         plt.imshow(npimg, cmap="Greys")
-#     else:
-#         plt.imshow(np.transpose(npimg, (1, 2, 0)))
-        
-# img_grid = torchvision.utils.make_grid(output.view(4,4))
-
-# # show images
-# matplotlib_imshow(img_grid, one_channel=True)
-
-# writer = SummaryWriter('runs/fashion_mnist_experiment_1')
-# writer.add_image('four_fashion_mnist_images', img_grid)
-
-# writer.add_graph(model, data)
-# writer.close()
-# %% Some experiments, not project related
-
-
+# %% Plots of the probability distribution
 
 def visualize_state_vec(output , string):
     rep = output.view(1,-1)
@@ -474,32 +424,28 @@ def visualize_state_vec(output , string):
     plt.ylim(top = 1) #xmax is your value
     plt.ylim(bottom = 0.00) #xmax is your value
     plt.show()
-    
-
 
 # %%
 with torch.no_grad():
     correct = 0
-    for batch_idx, datas in enumerate(train_loader):
-        # TEST LOADERA DEGISMELI!!!
-        # normalized = data.view(1,-1).numpy().reshape(-1)
-        # normalized = torch.Tensor(normalized).view(1,-1)
-        # data = data['data']
+    for batch_idx, datas in enumerate(test_loader):
+        
         # for iris dataset
+        # data = data['data']
         data,target = datas
         
         normalized = np.abs(nn.functional.normalize((data ).view(1,-1)).numpy()).reshape(-1)
         normalized = torch.Tensor(normalized).view(1,-1)
+        
         if(padding_op):
             new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
             new_arg = torch.Tensor(new_arg).view(1,-1)
-        
             output = model(new_arg, training_mode = False)        
-            # loss = test_loss((new_arg**2).view(-1), output.view(-1))
         else:
-            output = model(normalized, training_mode = False)        
-            # loss = test_loss((normalized**2).view(-1), output.view(-1))
-        shape_val = output.shape
+            output = model(normalized, training_mode = False, return_latent = True)        
+            
+            loss = test_loss((normalized**2).view(-1), output.view(-1))
+            
         visualize(output, normalized ** 2 )
         visualize_state_vec(output , 'output' + str(batch_idx))
         visualize_state_vec(normalized**2, 'data' + str(batch_idx))
@@ -509,17 +455,12 @@ with torch.no_grad():
         print(' - - - ')
         if(batch_idx == 5):
             break
-            
-            
-            
+    
         total_loss.append(loss.item())
 
-        
-        # print(normalized)
     print('Performance on test data:\n\tLoss: {:.4f}\n\tAccuracy: {:.1f}%'.format(
         sum(total_loss) / len(total_loss),
         correct / len(test_loader) * 100)
         )
-# %% 
     
     
