@@ -79,8 +79,8 @@ class IRISDataset(Dataset):
                 on a sample.
         """
         # self.traindata = traindata
-        # self.traindata = torch.cat( ( torch.cat(  (traindata.clone().detach(),traindata), dim = 1) ,  torch.cat(  (traindata.clone().detach(),traindata),dim = 1 )) , dim = 1)
-        self.traindata  = traindata
+        self.traindata = torch.cat( ( torch.cat(  (traindata.clone().detach(),traindata), dim = 1) ,  torch.cat(  (traindata.clone().detach(),traindata),dim = 1 )) , dim = 1)
+        # self.traindata  = traindata
         self.transform = transform
 
     def __len__(self):
@@ -147,7 +147,7 @@ latent_space_size = 1 # TODO determined according to reference size
 auxillary_qubit_size = 1
 
 training_qubits_size = int(np.ceil(np.log2(normalized.shape[0])))
-training_qubits_size = 2
+training_qubits_size = 4
 n_qubits = training_qubits_size + latent_space_size  + auxillary_qubit_size
 normalized = torch.Tensor(normalized).view(1,-1)
 
@@ -331,10 +331,13 @@ if(pad_amount > 0 ):
 for epoch in range(epochs):
     total_loss = []
     start_time = timeit.time.time()
-    for i,datas in enumerate(dataloader):
+    for i,datas in enumerate(train_loader):
         opt.zero_grad()
         
-        data = datas['data']
+        # data = datas['data']
+        # for iris dataseti
+        
+        data, target = datas
         # normalized = nn.functional.normalize(data.view(1,-1)).numpy().reshape(-1)
         # normalized = torch.Tensor(normalized).view(1,-1)
         # They do not have to be normalized since AmplitudeEmbeddings does that
@@ -417,14 +420,14 @@ def visualize(out,data):
     # else:
     #     unnormed_out = (out  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
     
-    data = data.view(1,1,2,-1)
+    data = data.view(1,1,training_qubits_size,-1)
     
     count = 0
     axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
 
     axes[count].set_xticks([])
     axes[count].set_yticks([])
-    out = out.view(1,1,2,-1)
+    out = out.view(1,1,training_qubits_size,-1)
     count+=1
     axes[count].imshow(out[0].numpy().squeeze(), cmap='gray')
 
@@ -477,11 +480,14 @@ def visualize_state_vec(output , string):
 # %%
 with torch.no_grad():
     correct = 0
-    for batch_idx, data in enumerate(dataloader):
+    for batch_idx, datas in enumerate(train_loader):
         # TEST LOADERA DEGISMELI!!!
         # normalized = data.view(1,-1).numpy().reshape(-1)
         # normalized = torch.Tensor(normalized).view(1,-1)
-        data = data['data']
+        # data = data['data']
+        # for iris dataset
+        data,target = datas
+        
         normalized = np.abs(nn.functional.normalize((data ).view(1,-1)).numpy()).reshape(-1)
         normalized = torch.Tensor(normalized).view(1,-1)
         if(padding_op):
