@@ -64,13 +64,13 @@ train_X, test_X, train_y, test_y = train_test_split(dataset[dataset.columns[0:4]
                                                     dataset.species.values, test_size=0.8)
 
 # wrap up with Variable in pytorch
-train_X = (torch.Tensor(train_X).float())
-test_X = (torch.Tensor(test_X).float())
+traindata = (torch.Tensor(train_X).float())
+testdata = (torch.Tensor(test_X).float())
 
 class IRISDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, traindata, traintarget, transform=None):
+    def __init__(self, traindata,transform=None):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -78,27 +78,30 @@ class IRISDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.traindata = traindata
+        # self.traindata = traindata
+        # self.traindata = torch.cat( ( torch.cat(  (traindata.clone().detach(),traindata), dim = 1) ,  torch.cat(  (traindata.clone().detach(),traindata),dim = 1 )) , dim = 1)
+        self.traindata  = traindata
         self.transform = transform
 
     def __len__(self):
-        return len(self.traindata)
-
+        # return len(self.traindata)
+        return 1
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
         
-        data = traindata[idx]
-        target = traintarget[idx]
+        data = self.traindata[idx]
+         
         
-        sample = {'data': data, 'target': target}
+        
+        sample = {'data': data}
 
         if self.transform:
             sample = self.transform(sample)
 
         return sample
-myData = IRISDataset(traindata,traintarget)
+myData = IRISDataset(traindata)
 
 
 dataloader = DataLoader(myData)
@@ -111,6 +114,7 @@ dataloader = DataLoader(myData)
 # setting1
 # n_samples = 200
 
+test_loss = nn.MSELoss()
 # setting2
 n_samples = 2
 # for4x4 
@@ -173,8 +177,7 @@ class Net(nn.Module):
             # Add entangling layer ??
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
-                a = qml.Rot(*weights_r[0, ind], wires = i)
-                self.first_rots.append(np.matrix(a.matrix))
+                self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, ind], wires = i)).matrix).H)
             #Definition of unitary gate of the programmable circuit
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
@@ -189,12 +192,11 @@ class Net(nn.Module):
                         ctr += 1
             for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                 ind = i - (latent_space_size + auxillary_qubit_size)
-                a = qml.Rot(*weights_r[1, ind], wires = i)
-                self.final_rots.append(np.matrix(a.matrix).H)
-            
+                self.final_rots.append(np.matrix(qml.Rot(*weights_r[1, ind], wires = i).matrix).H)
+                
             if(self.training_mode==True):
                 self.SWAP_Test()
-                return qml.expval(qml.PauliZ(0))
+                return qml.probs(0)
             else:
                 #qml.expval(qml.PauliZ(0))
                 # return qml.probs(range(2*latent_space_size + auxillary_qubit_size, n_qubits ))
@@ -204,13 +206,14 @@ class Net(nn.Module):
                 for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                     ind = i - (latent_space_size + auxillary_qubit_size)
                     qml.QubitUnitary(self.final_rots[ind], wires = i)
-                
+                    print('final', self.final_rots)
                 for i in range(len(self.cnot)):
-                    qml.QubitUnitary(self.cnot[i] , wires = self.wires_list[i])
+                    qml.QubitUnitary(self.cnot.pop() , wires = self.wires_list.pop())
                 
                 for i in range(latent_space_size + auxillary_qubit_size , n_qubits):
                     ind = i - (latent_space_size + auxillary_qubit_size)
                     qml.QubitUnitary(self.first_rots[ind], wires = i)
+                    print('rots', self.first_rots)
                 
                 return qml.probs(range(auxillary_qubit_size+latent_space_size,n_qubits ))
     
@@ -267,6 +270,8 @@ class Net(nn.Module):
             
             # Within Torch Object, you reach the circuit with TorchObj.qnode
             print(self.qlayer.qnode.draw())
+        if(training_mode == False):
+            print(self.qlayer.qnode.draw())
 
         
         return x
@@ -276,8 +281,8 @@ class Net(nn.Module):
 
 def Fidelity_loss(measurements):
     
-    fidelity = (2 * measurements - 1.00)
-    return torch.log(1-fidelity)
+    fidelity = (2 * measurements[0] - 1.00)
+    return torch.log(1- fidelity)
 
 
 # %%
@@ -297,7 +302,7 @@ model = Net()
 learning_rate = 0.1
 learning_rate = 0.01
 
-epochs = 20
+epochs = 70
 
 loss_list = []
 
@@ -305,7 +310,7 @@ loss_list = []
 opt = torch.optim.Adam(model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
 # loss_func = torch.nn.CrossEntropyLoss() # TODO replaced with fidelity
 loss_func = Fidelity_loss
-
+# loss_func = nn.MSELoss()
 
 # TODO : save the initial parameters, then look at optimized ones.
 
@@ -352,11 +357,17 @@ for epoch in range(epochs):
         
         
         # su measurementi bi print ettir
-        loss = loss_func(out)    
+        # loss = loss_func(out)    
+        loss = loss_func(out[0])
         loss.backward()
         if(i%10 == 0):
             print(out)
         opt.step()
+        # output = model(normalized, training_mode = False)        
+        # loss_test = test_loss((normalized**2).view(-1), output.view(-1))
+        
+        # print('Test loss: ', loss_test)
+        
         # if(i%10 == 9):
         #     end_time_in = timeit.time.time()
         #     #print(out)
@@ -393,7 +404,6 @@ test_loader = torch.utils.data.DataLoader(X_test, batch_size=1, shuffle=True)
 
 # %%
 
-test_loss = nn.MSELoss()
 
     
 def visualize(out,data):
@@ -407,20 +417,19 @@ def visualize(out,data):
     # else:
     #     unnormed_out = (out  * np.sqrt((data**2).sum().numpy())).view(1,1,training_qubits_size,-1)
     
-    data = data.view(1,1,img_shape,-1)
+    data = data.view(1,1,2,-1)
     
     count = 0
     axes[count].imshow(data[0].numpy().squeeze(), cmap='gray')
 
     axes[count].set_xticks([])
     axes[count].set_yticks([])
-    out = out.view(1,1,img_shape,-1)
+    out = out.view(1,1,2,-1)
     count+=1
     axes[count].imshow(out[0].numpy().squeeze(), cmap='gray')
 
     axes[count].set_xticks([])
     axes[count].set_yticks([])
-    print(data)
     plt.show()
 
 
@@ -473,8 +482,7 @@ with torch.no_grad():
         # normalized = data.view(1,-1).numpy().reshape(-1)
         # normalized = torch.Tensor(normalized).view(1,-1)
         data = data['data']
-        normalized = nn.functional.normalize((data ).view(1,-1)).numpy().reshape(-1)
-            
+        normalized = np.abs(nn.functional.normalize((data ).view(1,-1)).numpy()).reshape(-1)
         normalized = torch.Tensor(normalized).view(1,-1)
         if(padding_op):
             new_arg = torch.cat((normalized[0], pad_tensor), dim=0)    
@@ -486,10 +494,10 @@ with torch.no_grad():
             output = model(normalized, training_mode = False)        
             # loss = test_loss((normalized**2).view(-1), output.view(-1))
         shape_val = output.shape
-        # visualize(output, normalized ** 2 )
-        # visualize_state_vec(output , 'output' + str(batch_idx))
-        # visualize_state_vec(normalized**2, 'data' + str(batch_idx))
-        print(data)
+        visualize(output, normalized ** 2 )
+        visualize_state_vec(output , 'output' + str(batch_idx))
+        visualize_state_vec(normalized**2, 'data' + str(batch_idx))
+        
         print((normalized**2).view(-1))
         print(output.view(-1))
         print(' - - - ')
@@ -506,3 +514,6 @@ with torch.no_grad():
         sum(total_loss) / len(total_loss),
         correct / len(test_loader) * 100)
         )
+# %% 
+    
+    
