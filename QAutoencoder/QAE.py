@@ -417,8 +417,8 @@ def visualize(out,data):
 def visualize_state_vec(output , string):
     rep = output.view(1,-1)
     # xPoints = [ str(np.binary_repr(i)) for i in range(0,training_qubits_size**2)]
-    xPoints = [ i for i in range(0,training_qubits_size**2)]
-    yPoints = [rep[0,i] for i in range(0,training_qubits_size**2)]
+    xPoints = [ i for i in range(0,2**training_qubits_size )]
+    yPoints = [rep[0,i] for i in range(0,2**training_qubits_size )]
     plt.bar(xPoints, yPoints)
     plt.suptitle(string)
     plt.ylim(top = 1) #xmax is your value
