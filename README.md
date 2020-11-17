@@ -1,2 +1,2 @@
 # QuantumNeuralNet
-Programmable Q-Circuit, supported by a 2-Layer NN for Classification
+Programmable QAutoEncoder for MNIST and IRIS Datasets
