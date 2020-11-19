@@ -1,2 +1,3 @@
 # QuantumNeuralNet
-Programmable QAutoEncoder for MNIST and IRIS Datasets
+Programmable QuantumAutoencoder, using MNIST and IRIS Datasets
+
