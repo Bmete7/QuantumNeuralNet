@@ -42,11 +42,13 @@ from visualizations import visualize, visualize_state_vec
 # %% Dataset + preprocessing 
 
 
-n_samples = 4
+# Couple of changes is done on torch.py and jacobian.py for grads in pennylane
+
+n_samples = 20
 img_shape = 4
 batch_size = 1
-latent_space_size = 1 # Latent space size will be in N - latent_space_size
-auxillary_qubit_size = 1 # for the SWAP Test
+latent_space_size = 2 # Latent space size will be in N - latent_space_size
+auxillary_qubit_size = 2 # for the SWAP Test
 
 dataset_type = 'MNIST'
 #dataset_type = 'IRIS'
@@ -59,16 +61,20 @@ if(dataset_type == 'IRIS'):
 else:
     assert('Error')
 # %%
-def Fidelity_loss(measurements):
+def Fidelity_loss(mes):
+    tot  =0
+    for i in mes[0]:
+        tot += i[0]
+    fidelity = (2 * (tot) / len(mes[0])  - 1.00)
     
-    fidelity = (2 * measurements[0] - 1.00)
+    
     return torch.log(1- fidelity)
 
 dev = qml.device("default.qubit", wires=n_qubits,shots = 1000)
-model = Net(dev, latent_space_size, n_qubits, training_qubits_size)
+model = Net(dev, latent_space_size, n_qubits, training_qubits_size,auxillary_qubit_size)
 
 learning_rate = 0.1
-epochs = 15
+epochs = 10
 loss_list = []
 
 # opt = torch.optim.SGD(model.parameters() , lr = learning_rate )
@@ -104,9 +110,7 @@ for epoch in range(epochs):
         
         
         out = model(normalized,True)
-
-        
-        loss = loss_func(out[0])
+        loss = loss_func(out)
         loss.backward()
         
         if(i%10 == 0):

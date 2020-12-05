@@ -66,17 +66,20 @@ class Net(nn.Module):
             # Number of parameters = N * 3                         
             for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
                 ind = i - (self.latent_space_size + self.auxillary_qubit_size)
+                
                 self.final_rots.append(np.matrix(qml.Rot(*weights_r[1, ind], wires = i).matrix).H)
                 
             if(self.training_mode==True):
                 self.SWAP_Test()
-                return qml.probs(0)
+                #return(qml.probs(0))
+                return [qml.probs(i) for i in range(self.auxillary_qubit_size)]
             
             else:
                 
                 
                 # In the testing, SWAP the Reference Bit and the trash states
-                qml.SWAP(wires = [1,2])
+                for i in range(self.latent_space_size):
+                    qml.SWAP(wires = [self.auxillary_qubit_size + i , self.auxillary_qubit_size + i + self.latent_space_size])
                 
                 for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
                     ind = i - (self.latent_space_size + self.auxillary_qubit_size)
@@ -129,11 +132,14 @@ class Net(nn.Module):
     def SWAP_Test(self):
         # SWAP Test measures the similarity between 2 qubits 
         # see https://arxiv.org/pdf/quant-ph/0102001.pdf
-        
-        qml.Hadamard(wires = 0)
-        for i in range(self.auxillary_qubit_size, self.latent_space_size + self.auxillary_qubit_size):
-            qml.CSWAP(wires = [0, i, i + self.latent_space_size])
-        qml.Hadamard(wires = 0)
+        for i in range(self.auxillary_qubit_size):
+            qml.Hadamard(wires = i)
+        for i in range(self.auxillary_qubit_size):
+            qml.CSWAP(wires = [i, i+ self.auxillary_qubit_size , self.auxillary_qubit_size + i + self.latent_space_size])
+        # for i in range(self.auxillary_qubit_size, self.latent_space_size + self.auxillary_qubit_size):
+        #     qml.CSWAP(wires = [0, i, i + self.latent_space_size])
+        for i in range(self.auxillary_qubit_size):
+            qml.Hadamard(wires = i)
         
     def forward(self, x, training_mode = True, return_latent = False):
         self.training_mode = training_mode
