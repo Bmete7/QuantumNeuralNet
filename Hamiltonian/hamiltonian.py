@@ -53,21 +53,30 @@ class myLinear(nn.Module):
         output = torch.cat((self.weight_11 *  input[0,0] + self.weight_12 *  input[1,0] , self.weight_21 *  input[0,0] + self.weight_22 *  input[1,0]), 0)
         return output
 
-loss_
+def ComplexL2(out,target):
+    #eturn (out[0] - target[0,0])
+    return (torch.abs(out[0] - target[0,0])) + (torch.abs(out[1] - target[1,0]))
+    
 #%%
 
-custom = myLinear()
+
 a = torch.zeros((2,1), dtype = torch.cfloat)
 a[0,0] = 1
 
 b = torch.zeros((2,1), dtype = torch.cfloat)
 b[1,0] = 1
-
-custom.forward(a)
-
-
+custom = myLinear()
+optimizer = optim.SGD(custom.parameters(), lr=0.01, momentum=0.9)
 
 
+for i in range(10000):
+    optimizer.zero_grad()
+    r = custom.forward(a)
+    loss = ComplexL2(r, b)
+    loss.backward()
+    if(i%10):
+        print(loss)
+    optimizer.step()
 # %%
 class HamiltonianNet(nn.Module):
     def __init__(self):
