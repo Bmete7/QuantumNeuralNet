@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import pennylane as qml
-
+from copy import deepcopy
 
 # %% Whole network is defined within this class
 class Net(nn.Module):
@@ -42,6 +42,10 @@ class Net(nn.Module):
             self.cnot = []
             self.wires_list = []
             
+            self.first_rots_lat  = []
+            self.final_rots_lat = []
+            self.cnot_lat = []
+            self.wires_list_lat = []
             
             # Single rotation gates for each qubit- Number of gates = N
             # Number of parameters = N * 3 
@@ -70,13 +74,31 @@ class Net(nn.Module):
                 self.final_rots.append(np.matrix(qml.Rot(*weights_r[1, ind], wires = i).matrix).H)
                 
             if(self.training_mode==True):
-                self.SWAP_Test()
-                #return(qml.probs(0))
-                return [qml.probs(i) for i in range(self.auxillary_qubit_size)]
-            
+                if(self.return_latent == True):
+                    if(self.return_latent_vec == False):
+                        print('here')
+                        
+                    else:
+                        return [qml.expval(qml.PauliZ(i)) for i in range(auxillary_qubit_size+latent_space_size+latent_space_size,n_qubits)]
+                else:
+                    
+                    self.SWAP_Test()
+                    print('here')
+                    #return(qml.probs(0))
+                    return [qml.probs(i) for i in range(self.auxillary_qubit_size)]
+            elif(self.training_mode==False and self.return_latent == True):
+                #return qml.probs(range(auxillary_qubit_size+latent_space_size+1,n_qubits ))
+                if(self.return_latent_vec == True ):
+                    return [qml.expval(qml.PauliZ(i)) for i in range(auxillary_qubit_size+latent_space_size+1,n_qubits)]
+                else:
+                    return qml.probs(range(auxillary_qubit_size+latent_space_size+latent_space_size,n_qubits ))
             else:
+                #
                 
-                
+                self.first_rots_lat  =deepcopy(self.first_rots)
+                self.final_rots_lat = deepcopy(self.final_rots)
+                self.cnot_lat = deepcopy(self.cnot)
+                self.wires_list_lat = deepcopy(self.wires_list)
                 # In the testing, SWAP the Reference Bit and the trash states
                 for i in range(self.latent_space_size):
                     qml.SWAP(wires = [self.auxillary_qubit_size + i , self.auxillary_qubit_size + i + self.latent_space_size])
@@ -84,20 +106,26 @@ class Net(nn.Module):
                 for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
                     ind = i - (self.latent_space_size + self.auxillary_qubit_size)
                     qml.QubitUnitary(self.final_rots[ind], wires = i)
-                    print('final', self.final_rots)
+                    
                 for i in range(len(self.cnot)):
                     qml.QubitUnitary(self.cnot.pop() , wires = self.wires_list.pop())
                 
                 for i in range(self.latent_space_size + self.auxillary_qubit_size ,self.n_qubits):
                     ind = i - (self.latent_space_size + self.auxillary_qubit_size)
                     qml.QubitUnitary(self.first_rots[ind], wires = i)
-                    print('rots', self.first_rots)
-                
+                return [qml.expval(qml.PauliZ(i)) for i in range(auxillary_qubit_size+latent_space_size,n_qubits)]
                 return qml.probs(range(auxillary_qubit_size+latent_space_size,n_qubits ))
+
+        
     
+    
+        
         weight_shapes = {"weights_r": (2 , training_qubits_size, 3),"weights_cr": (self.training_qubits_size,self.training_qubits_size-1 ,3), "weights_st":  (3,self.training_qubits_size,3)}
         weights_st = torch.tensor(qml.init.strong_ent_layers_uniform(3, self.training_qubits_size), requires_grad=True)
+        
         self.qlayer = qml.qnn.TorchLayer(q_circuit, weight_shapes)
+        
+        
         self.DRAW_CIRCUIT_FLAG = True
         self.matrix_container = np.ndarray((self.training_qubits_size))
 # =============================================================================
@@ -126,7 +154,10 @@ class Net(nn.Module):
         
         qml.templates.AmplitudeEmbedding(inputs, wires = range(self.latent_space_size+self.auxillary_qubit_size,self.n_qubits), normalize = True,pad=(0.j))
         #qml.QubitStateVector(inputs, wires = range(n_qubits))
-    @qml.template 
+        
+        
+
+    
     
     @qml.template
     def SWAP_Test(self):
@@ -141,9 +172,10 @@ class Net(nn.Module):
         for i in range(self.auxillary_qubit_size):
             qml.Hadamard(wires = i)
         
-    def forward(self, x, training_mode = True, return_latent = False):
+    def forward(self, x, training_mode = True, return_latent = False,return_latent_vec = False):
         self.training_mode = training_mode
         self.return_latent = return_latent
+        self.return_latent_vec = return_latent_vec
         x =  self.qlayer(x)
         
         #printing once before training
@@ -157,4 +189,137 @@ class Net(nn.Module):
 
         
         return x
+    def paramServer(self):
+        return self.first_rots_lat,self.final_rots_lat ,self.cnot_lat ,self.wires_list_lat 
+# %% 
+        
+class latNet(nn.Module):
+    def __init__(self,dev, latent_space_size, n_qubits,training_qubits_size,  param_server, auxillary_qubit_size = 1):
+        super(latNet, self).__init__()
+        
+        # inputs shpould be a keyword argument, for AmplitudeEmbedding !!
+        # then it becomes non-differentiable and the network suits with autograd
+        self.training_mode = True
+        self.return_latent = False
+        # This class constitutes the whole network, which includes a 
+        # data embeddings, parametric quantum circuit (encoder), SWAP TEST(Calculating the fidelity)
+        # Also the conj. transpose of the encoder(decoder)
+        
+        self.latent_space_size = latent_space_size
+        self.training_qubits_size = training_qubits_size
+        self.auxillary_qubit_size = auxillary_qubit_size
+        self.n_qubits = n_qubits
+        self.first_rots_lat,self.final_rots_lat ,self.cnot_lat ,self.wires_list_lat = param_server
+        @qml.qnode(dev)
+        def q_circuitLat(inputs = False):
+            self.embedding(inputs)
+            # Same circuit for testing, returns the latent space instead
+   
+            self.first_rots  = deepcopy(self.first_rots_lat)
+            self.final_rots = deepcopy(self.final_rots_lat)
+            self.cnot = deepcopy(self.cnot_lat)
+            self.wires_list = deepcopy(self.wires_list_lat)
+            # In the testing, SWAP the Reference Bit and the trash states
+            
+            
+            for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
+                ind = i - (self.latent_space_size + self.auxillary_qubit_size)
+                print(ind)
+                qml.QubitUnitary(self.first_rots[ind].H, wires = i)
+                
+            for i in range(len(self.cnot)):
+                qml.QubitUnitary(self.cnot.pop(0).H, wires = self.wires_list.pop(0))
+            
+            for i in range(self.latent_space_size + self.auxillary_qubit_size ,self.n_qubits):
+                ind = i - (self.latent_space_size + self.auxillary_qubit_size)
+                qml.QubitUnitary(self.final_rots[ind].H, wires = i)
+            
+            return qml.probs(range(self.auxillary_qubit_size+self.latent_space_size+self.latent_space_size ,self.n_qubits))
+        weight_shapes = {}
+        
 
+
+        self.qlayerLatent = qml.qnn.TorchLayer(q_circuitLat, weight_shapes)
+    @qml.template
+    def embedding(self,inputs):
+        # Most Significant qubit is the ancilla, then reference, then subsystem B then subystem A
+        # - Ancilla
+        # - Refernce
+        # - B (Trash State)
+        # - A (Latent Space)
+        # When normalize flag is True, features act like a prob. distribution
+        
+        qml.templates.AmplitudeEmbedding(inputs, wires = range(self.latent_space_size+self.auxillary_qubit_size,self.n_qubits), normalize = True,pad=(0.j))
+        #qml.QubitStateVector(inputs, wires = range(n_qubits))
+    def forward(self, x):
+        
+        x =  self.qlayerLatent(x)
+        
+        
+        return x
+# %% 
+        
+class genNet(nn.Module):
+    def __init__(self,dev, latent_space_size, n_qubits,training_qubits_size, param_server,  auxillary_qubit_size = 1):
+        
+        super(genNet, self).__init__()
+        
+        # inputs shpould be a keyword argument, for AmplitudeEmbedding !!
+        # then it becomes non-differentiable and the network suits with autograd
+        self.training_mode = True
+        self.return_latent = False
+        # This class constitutes the whole network, which includes a 
+        # data embeddings, parametric quantum circuit (encoder), SWAP TEST(Calculating the fidelity)
+        # Also the conj. transpose of the encoder(decoder)
+        
+        self.latent_space_size = latent_space_size
+        self.training_qubits_size = training_qubits_size
+        self.auxillary_qubit_size = auxillary_qubit_size
+        self.n_qubits = n_qubits
+
+
+        self.first_rots_lat,self.final_rots_lat ,self.cnot_lat ,self.wires_list_lat = param_server
+        
+        @qml.qnode(dev)
+        def q_circuitGenerateLat(inputs = False):
+            self.embeddingLatent(inputs)
+            
+            self.first_rots  =deepcopy(self.first_rots_lat)
+            self.final_rots = deepcopy(self.final_rots_lat)
+            self.cnot = deepcopy(self.cnot_lat)
+            self.wires_list = deepcopy(self.wires_list_lat)
+            # In the testing, SWAP the Reference Bit and the trash states
+            
+            
+            for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
+                ind = i - (self.latent_space_size + self.auxillary_qubit_size)
+                qml.QubitUnitary(self.final_rots[ind], wires = i)
+                
+            for i in range(len(self.cnot)):
+                qml.QubitUnitary(self.cnot.pop() , wires = self.wires_list.pop())
+            
+            for i in range(self.latent_space_size + self.auxillary_qubit_size ,self.n_qubits):
+                ind = i - (self.latent_space_size + self.auxillary_qubit_size)
+                qml.QubitUnitary(self.first_rots[ind], wires = i)
+                
+            
+            return qml.probs(range(self.auxillary_qubit_size+self.latent_space_size ,self.n_qubits))
+        
+        weight_shapes = {}
+        
+
+
+        self.qlayerGenerateLatent = qml.qnn.TorchLayer(q_circuitGenerateLat, weight_shapes)
+    @qml.template
+    def embeddingLatent(self,inputs):
+        
+        qml.templates.AmplitudeEmbedding(inputs, wires = range(self.latent_space_size + self.latent_space_size+ self.auxillary_qubit_size,self.n_qubits), normalize = True,pad=(0.j))
+        #qml.QubitStateVector(inputs, wires = range(n_qubits))    
+    def forward(self, x):
+        print(x)
+        x =  self.qlayerGenerateLatent(x)
+        print(x)
+        print(self.qlayerGenerateLatent.qnode.draw())
+    
+        
+        return x
