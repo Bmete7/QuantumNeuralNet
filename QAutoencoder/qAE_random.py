@@ -179,8 +179,8 @@ with torch.no_grad():
         
         output2 = model(data.view(1,-1), training_mode = True) 
 
-
-        
+        print(output2)
+        output = model(data.view(1,-1), training_mode = False, return_latent =False) 
         # lat_out = latModel(data.view(1,-1))
         # gen_out = genModel(np.sqrt(lat_out.detach()))
         
@@ -392,11 +392,11 @@ class ExpMat(tf.Module):
 
 # %%  Network to get rid of the phasor and getting the probabilities,
 # TODO: Relocate it inside the ExpMat class
-phasor_qml = qml.device("default.qubit", wires=1,shots = 1000)
+phasor_qml = qml.device("default.qubit", wires=2,shots = 1000)
 @qml.qnode(phasor_qml)
 def get_probs(inputs):
-    qml.templates.AmplitudeEmbedding(inputs, wires = [0], normalize = True,pad=(0.j))    
-    return qml.probs([0])
+    qml.templates.AmplitudeEmbedding(inputs, wires = [0,1], normalize = True,pad=(0.j))    
+    return qml.probs([0,1])
 
 
 # %%  
@@ -440,86 +440,154 @@ psi_out = target_latents[i+14]
 # One could find the hamiltonian
 
 
-dev = qml.device('default.qubit', wires=2 , shots = 1000)
-dev2 = qml.device('default.qubit', wires=2 , shots = 1000)
-dev3 = qml.device('default.qubit', wires=2 , shots = 1000)
 
 
 class Hamilton(nn.Module):
-    def __init__(self,dev,dev2,dev3):
+    def __init__(self,w_s):
     
         super(Hamilton, self).__init__()
-        @qml.qnode(dev)
-        def q_circuit(weights_r ,weights_cr ,inputs = False):
-            self.first_rots = []
-            self.cnot = []
-            self.final_rots = []
-            self.embedding(inputs)
-            self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
-            self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
+        
+        
+        
+        self.dev1 = qml.device('default.qubit', wires=6 , shots = 1000)
+        self.dev2 = qml.device('default.qubit', wires=2 , shots = 1000)
+        self.dev3 = qml.device('default.qubit', wires=2 , shots = 1000)
+        self.dev4 = qml.device('default.qubit', wires=2 , shots = 1000)
+        
+        @qml.qnode(self.dev1)
+        def q_circuit(weights_r , weights_cr  ,inputs = False):
+            
+            self.t_level_embedding(inputs)
+            self.a = qml.Rot(*weights_r[0, 0], wires = 0)
+            self.b = qml.Rot(*weights_r[0, 1], wires = 1)
+            
+            qml.Rot(*weights_r[0, 0], wires = 2)
+            qml.Rot(*weights_r[0, 1], wires = 3)
+            qml.Rot(*weights_r[0, 0], wires = 2)
+            qml.Rot(*weights_r[0, 1], wires = 3)
             
             
-            self.cnot.append( np.matrix(( qml.CRot( *weights_cr[0,0]  ,wires= [0,1]).matrix )) )
-            self.cnot.append( np.matrix(( qml.CRot( *weights_cr[1,0]  ,wires= [1,0]).matrix )) )
+            qml.Rot(*weights_r[0, 0], wires = 4)
+            qml.Rot(*weights_r[0, 1], wires = 5)
+            qml.Rot(*weights_r[0, 0], wires = 4)
+            qml.Rot(*weights_r[0, 1], wires = 5)
+            qml.Rot(*weights_r[0, 0], wires = 4)
+            qml.Rot(*weights_r[0, 1], wires = 5)
             
-            self.final_rots.append(np.matrix((qml.Rot(*weights_r[1, 0], wires = 0)).matrix))
-            self.final_rots.append(np.matrix((qml.Rot(*weights_r[1, 1], wires = 1)).matrix))
-            return qml.probs([0,1])
+            return qml.probs([0,1,2,3,4,5])
             
-        @qml.qnode(dev2)
-        def q_circuit2(weights_r ,weights_cr ,inputs = False):
-            self.first_rots = []
-            self.cnot = []
-            self.final_rots = []
-            self.embedding(inputs)
+        @qml.qnode(self.dev4)
+        def q_circuit1(weights_r , weights_cr ,inputs = False):
             
-            for i in range(2):
-                self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
-                self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
-            
-            
-                self.cnot.append( np.matrix(( qml.CRot( *weights_cr[0,0]  ,wires= [0,1]).matrix )) )
-                self.cnot.append( np.matrix(( qml.CRot( *weights_cr[1,0]  ,wires= [1,0]).matrix )) )
-            
-                self.final_rots.append(np.matrix((qml.Rot(*weights_r[1, 0], wires = 0)).matrix))
-                self.final_rots.append(np.matrix((qml.Rot(*weights_r[1, 1], wires = 1)).matrix))
-            
-            return qml.probs([0,1])
-        @qml.qnode(dev3)
-        def q_circuit3(weights_r ,weights_cr ,inputs = False):
-            self.first_rots = []
-            self.cnot = []
-            self.final_rots = []
             self.embedding(inputs)
             
-            for i in range(3):
-                self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
-                self.first_rots.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
-                
-                
-                self.cnot.append( np.matrix(( qml.CRot( *weights_cr[0,0]  ,wires= [0,1]).matrix )) )
-                self.cnot.append( np.matrix(( qml.CRot( *weights_cr[1,0]  ,wires= [1,0]).matrix )) )
-                
-                self.final_rots.append(np.matrix((qml.Rot(*weights_r[1, 0], wires = 0)).matrix))
-                self.final_rots.append(np.matrix((qml.Rot(*weights_r[1, 1], wires = 1)).matrix))
+            if(self.test == True):
+                self.first_rots2= []
+                self.first_rots2.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
+                self.first_rots2.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
                 
             
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+            else:
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+ 
             return qml.probs([0,1])
         
+        @qml.qnode(self.dev2)
+        def q_circuit2(weights_r , weights_cr ,inputs = False):
+
+            self.embedding(inputs)
+            
+            if(self.test == True):
+                self.first_rots3= []
+                self.first_rots3.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
+                self.first_rots3.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
+                
+            
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+            else:
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+                qml.Rot(*weights_r[0, 0], wires = 0)
+                qml.Rot(*weights_r[0, 1], wires = 1)
+            return qml.probs([0,1])
         
-        weight_shapes = {"weights_r": (2 , 2, 3),"weights_cr": (2,1 ,3)}
+        @qml.qnode(self.dev3)
+        def q_circuit3(weights_r , weights_cr  ,inputs = False):
+
+            
+            self.a = qml.Rot(*weights_r[0, 0], wires = 0).matrix
+            self.b = qml.Rot(*weights_r[0, 1], wires = 1).matrix
+            self.k1 = weights_r[0, 0]
+            
+            self.k2 = weights_r[0, 1]
+            
+            
+            return qml.probs([0,1])
+
+
         
-        self.qlayer = qml.qnn.TorchLayer(q_circuit, weight_shapes)
-        self.qlayer2 = qml.qnn.TorchLayer(q_circuit2, weight_shapes)
-        self.qlayer3 = qml.qnn.TorchLayer(q_circuit3, weight_shapes)
+        self.weight_shapes = {"weights_r": (2 , 2, 3),"weights_cr": (2,1 ,3)}
+        self.weight_s = {"wr": (1 , 1,  3)}
         
+        self.qlayer = qml.qnn.TorchLayer(q_circuit, w_s)
+        self.qlayer1 = qml.qnn.TorchLayer(q_circuit1, w_s)
+        self.qlayer2 = qml.qnn.TorchLayer(q_circuit2, w_s)
+        self.qlayer3 = qml.qnn.TorchLayer(q_circuit3, w_s)
+        
+        self.test = False
+
     @qml.template
     def embedding(self,inputs):
-        qml.templates.AmplitudeEmbedding(inputs, wires = range(0,2), normalize = True,pad=(0.j))
+        qml.templates.AmplitudeEmbedding(inputs[:2], wires = range(0,2), normalize = True,pad=(0.j))
+    @qml.template
+    def t_level_embedding(self,inputs):
+        qml.templates.AmplitudeEmbedding(inputs, wires = range(0,6), normalize = True,pad=(0.j))
+        
+
     def forward(self, x):
-        return self.qlayer(x) , self.qlayer2(x) ,  self.qlayer3(x) 
+        
+        return self.qlayer(x)
+        z = self.qlayer1(x)
+        q  = self.qlayer2(x)
+         
+        # print(self.qlayer.qnode.draw())
+        
+    def params(self,x):
+        self.qlayer3(x)
+        return np.copy(self.a), np.copy(self.b)
+
     
-hamilton = Hamilton(dev,dev2,dev3)
+# %%  prepare state vec
+
+
+d1 = features[1]
+d2 = features[2]
+
+
+
+dev6 = qml.device('default.qubit', wires=4 , shots = 1000)
+@qml.qnode(dev6)
+def s_vec(inp):
+    qml.templates.AmplitudeEmbedding(inp, wires = range(0,4), normalize = True,pad=(0.j))
+    # qml.templates.AmplitudeEmbedding(inp2, wires = range(2,4), normalize = True,pad=(0.j))
+    
+    
+    
+    return qml.probs([0,1])
+s_vec(np.kron(d1.numpy(),d2.numpy()))
+
+# %%
+
 learning_rate = 0.01
 
 loss_list_ham = []
@@ -530,90 +598,106 @@ loss_func_ham = L2_loss
 
 loss_hist_ham = []
 
+w_s = {"weights_r": (2 , 2, 3),"weights_cr": (2,1 ,3)}
 # hamilton(torch.Tensor(tf.cast(features[0] , dtype = tf.float64).numpy()))
-hamNets = []    
-for i in range(7):
-    dev = qml.device('default.qubit', wires=2 , shots = 1000)
-    dev2 = qml.device('default.qubit', wires=2 , shots = 1000)
-    dev3 = qml.device('default.qubit', wires=2 , shots = 1000)
-    hamilton = Hamilton(dev,dev2,dev3)
-    opt_ham = torch.optim.Adam(hamilton.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-    for j in range(100):
-        
-        opt_ham.zero_grad()
-        data = torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())
-        target = (torch.Tensor(tf.cast(targets[i] , dtype = tf.float64).numpy())) ** 2
-        target2 = (torch.Tensor(tf.cast(targets[i+7] , dtype = tf.float64).numpy())) ** 2
-        target3 = (torch.Tensor(tf.cast(targets[i+14] , dtype = tf.float64).numpy())) ** 2
-        
-        out = hamilton(data)
-        
-        
-        
-        
-        loss = loss_func_ham(target,out[0]) + loss_func_ham(target2,out[1])  + loss_func_ham(target3,out[2])
-        
-        loss.backward()
-        if(j%10):
-            print(loss_func_ham(target2,out[1]) , loss_func_ham(target,out[0]) , loss_func_ham(target3,out[2]))
-        
-        loss_hist_ham.append(loss)
-        opt_ham.step()
-        
-    torch.save(hamilton.state_dict() , str(i) + '.pth.tar')
-    hamNets.append(hamilton)
-        
-        
-hadamard = np.array(((1+0j,1), (1,-1)))
-hadamard /= np.sqrt(2)
-        
-#  Load, and check if they are working fine
 
-for i in range(7):
-    print((hamNets[i](torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy()))))
-    print((torch.Tensor(tf.cast(targets[i] , dtype = tf.float64).numpy())) ** 2)
+hamilton = Hamilton(w_s)
+opt_ham = torch.optim.Adam(hamilton.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+
+
     
-    hamNets[i].first_rots[:2]
+for j in range(40):
     
-    cnotss = np.copy(hamNets[i].cnot[1])
-    cnotss[1,1] = np.copy(hamNets[i].cnot[1][2,2] )
-    cnotss[1,3] = np.copy(hamNets[i].cnot[1][2,3] )
-    cnotss[3,1] = np.copy(hamNets[i].cnot[1][3,2] )
-    cnotss[3,2] = 0
-    cnotss[2,3] = 0
-    cnotss[2,2] = 1
+    opt_ham.zero_grad()
     
-    deneme_result = np.kron( hamNets[i].first_rots[0] , hamNets[i].first_rots[1]) @ hamNets[i].cnot[0] @ cnotss @ np.kron(hamNets[i].final_rots[0] , hamNets[i].final_rots[1])    @ np.array(tf.cast(features[i] , dtype = tf.float64).numpy())
-    np.abs(np.array(deneme_result) ** 2)
+    # data = torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())
+    # data = torch.Tensor(np.kron(tf.cast(features[i] , dtype = tf.float64).numpy() , tf.cast(features[i] , dtype = tf.float64).numpy() ))
+    data = torch.Tensor(np.kron( tf.cast(features[i] , dtype = tf.float64).numpy() , np.kron(tf.cast(features[i] , dtype = tf.float64).numpy() , tf.cast(features[i] , dtype = tf.float64).numpy() )))
+    
+    target = (torch.Tensor(tf.cast(targets[i] , dtype = tf.float64).numpy())) ** 2
+    target2 = (torch.Tensor(tf.cast(targets[i+7] , dtype = tf.float64).numpy())) ** 2
+    target3 = (torch.Tensor(tf.cast(targets[i+14] , dtype = tf.float64).numpy())) ** 2
+    target4 = (torch.Tensor(tf.cast(targets[i+21] , dtype = tf.float64).numpy())) ** 2
+    
+    out = hamilton(data)
+    two_l_target = torch.Tensor(np.kron(np.kron(target, target2) , target3))
+    
+    loss = loss_func_ham(two_l_target,out) # + loss_func_ham(target2,out[1])  #+ loss_func_ham(target3,out[2]) #+ loss_func_ham(target4,out[3]) 
+    
+    loss.backward()
+    if(j%6 == 0):
+        print(loss)
+    
+    loss_hist_ham.append(loss)
+    opt_ham.step()
+torch.save(hamilton.state_dict() ,'2801_0' + '.pth.tar')
+
+U = np.kron(hamilton.a.matrix , hamilton.b.matrix)
+u = deepcopy(U)
+get_probs(u @ features[i].numpy())
+get_probs(u @ u @ features[i].numpy())
+get_probs(u @ u @ u @ features[i].numpy())
+
+
+
+
+
+# %%  Extraxting the Unitary, this part will be deleted later on
+
+ddev = qml.device("default.qubit", wires=2,shots = 1000)
+c1 = []
+
+c2 = []
+
+c3 = []
+
+
+@qml.qnode(ddev)
+def d_circuit(weights_r ,weights_cr,weights_crr,weights_crrr, weights_crrrr,weights_crrrrr, inputs):
+
+    
+    qml.templates.AmplitudeEmbedding(inputs, wires = range(0,2), normalize = True,pad=(0.j))
+    
+    c1.append(np.matrix((qml.Rot(*weights_r, wires = 0)).matrix))
+    c1.append(np.matrix((qml.Rot(*weights_cr, wires = 1)).matrix))
+    
+    c3.append(np.matrix((qml.CRot(*weights_crrrr, wires = [0,1])).matrix))
+    c3.append(np.matrix((qml.CRot(*weights_crrrrr, wires = [1,0])).matrix))
     
     
-#     print(torch.abs(((torch.Tensor(tf.cast(targets[i+7] , dtype = tf.float64).numpy())) ** 2) - (hamNets[i](torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())))[1] ))
-#     print(torch.abs(((torch.Tensor(tf.cast(targets[i+14] , dtype = tf.float64).numpy())) ** 2) - (hamNets[i](torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())))[2] ))
-#     print('---')
-    
-# hamNets[1](torch.Tensor(tf.cast(features[1] , dtype = tf.float64).numpy()))
-# target = (torch.Tensor(tf.cast(targets[1] , dtype = tf.float64).numpy())) ** 2
-# target2 = (torch.Tensor(tf.cast(targets[1+7] , dtype = tf.float64).numpy())) ** 2
-# target3 = (torch.Tensor(tf.cast(targets[1+14] , dtype = tf.float64).numpy())) ** 2    
-    
-    
-    
-# %% 
-    
+    c2.append(np.matrix((qml.Rot(*weights_crr, wires = 0)).matrix))
+    c2.append(np.matrix((qml.Rot(*weights_crrr, wires = 1)).matrix))
+    return qml.probs([0,1])
+
+
+cnotssss = np.copy( c3[1] )
+cnotssss[1,1] = np.copy( c3[1][2,2] )
+cnotssss[1,3] = np.copy( c3[1][2,3] )
+cnotssss[3,1] = np.copy( c3[1][3,2] )
+cnotssss[3,2] = 0
+cnotssss[2,3] = 0
+cnotssss[2,2] = 1
+print(d_circuit( np.array([1,2,3]) , np.array([4,5,6]) ,   np.array([1,3,1]) ,  np.array([2,3,7]) , np.array([5,4,4]) ,np.array([14,0.3,1]) ,   (torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())).numpy() ))
+ress =  np.kron(c2[0],c2[1])  @ cnotssss @  c3[0] @  np.kron(c1[0],c1[1])  @ (torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())).numpy() 
+
+np.abs( np.array(ress) ** 2 )
+
+# %%
     
 backend = Aer.get_backend('unitary_simulator')
 
 #The circuit without measurement
 circ = QuantumCircuit(2)
-fr0 = qiskit.extensions.UnitaryGate(hamNets[i].first_rots[0])
-fr1 = qiskit.extensions.UnitaryGate(hamNets[i].first_rots[1])
+fr0 = qiskit.extensions.UnitaryGate(hamOld[i].first_rots[0])
+fr1 = qiskit.extensions.UnitaryGate(hamOld[i].first_rots[1])
 
-cnot0 = qiskit.extensions.UnitaryGate(hamNets[i].cnot[0])
-cnot1 = qiskit.extensions.UnitaryGate(hamNets[i].cnot[1])
+cnot0 = qiskit.extensions.UnitaryGate(hamOld[i].cnot[0])
+cnot1 = qiskit.extensions.UnitaryGate(hamOld[i].cnot[1])
 
-fn0 = qiskit.extensions.UnitaryGate(hamNets[i].final_rots[0])
-fn1 = qiskit.extensions.UnitaryGate(hamNets[i].final_rots[1])
+fn0 = qiskit.extensions.UnitaryGate(hamOld[i].final_rots[0])
+fn1 = qiskit.extensions.UnitaryGate(hamOld[i].final_rots[1])
 
+# circ.initialize(features[i].numpy() , [0,1])
 circ.append(fr0, [0])
 circ.append(fr1, [1])
 
@@ -624,12 +708,12 @@ circ.append(fn0, [0])
 circ.append(fn1, [1])
 
 
-
-
 circ.draw()
 #job execution and getting the result as an object
 job = execute(circ, backend)
-result = job.result()
 
+result = job.result()
+outputstate = result.get_statevector(circ, decimals=3)
 #get the unitary matrix from the result object
 U = result.get_unitary(circ, decimals=3)
+
