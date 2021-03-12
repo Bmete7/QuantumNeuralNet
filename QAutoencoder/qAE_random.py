@@ -5,6 +5,14 @@ Created on Tue Nov 17 14:01:43 2020
 @author: burak
 """
 
+
+
+
+
+# %%
+
+# TASK 1-  Try different embedding (1 to 1 )
+
 # %% 
 import numpy as np
 import torch
@@ -31,10 +39,11 @@ from torch.utils.data import Dataset, DataLoader
 import sys
 
 sys.path.append('../dataLoad')
+
 sys.path.append('C:/Users/burak/OneDrive/Desktop/Quantum Machine Learning/CodeBank/QuantumNeuralNet/dataLoad')
 sys.path.append('C:/Users/burak/OneDrive/Desktop/Quantum Machine Learning/CodeBank/QuantumNeuralNet/pennyLane')
 sys.path.append('C:/Users/burak/OneDrive/Desktop/Quantum Machine Learning/CodeBank/QuantumNeuralNet/representation')
-sys.path.append('../pennyLane')
+sys.path.append('../PennyLane')
 sys.path.append('../representation')
 from IrisLoad import importIRIS, IRISDataset
 from MNISTLoad import importMNIST
@@ -56,8 +65,10 @@ pauli_z = np.array(((1+0j, 0), (0, -1)))
 # %%
 def Fidelity_loss(mes):
     tot  =0
-    for i in mes[0]:
+    for i in mes:
+        
         tot += i[0]
+        print(tot)
     fidelity = (2 * (tot) / len(mes[0])  - 1.00)
     return torch.log(1- fidelity)
 
@@ -66,7 +77,8 @@ dev2 = qml.device("default.qubit", wires=4,shots = 1000)
 model = Net(dev2, 1, 4, 2, 1)
 
 # new_model = Net(dev2, 1, 4, 2, 1)
-model.load_state_dict(torch.load('21jan.pth.tar'))
+# Import the autoencoder model, which is trained
+model.load_state_dict(torch.load('21jan.pth.tar')) 
 
 learning_rate = 0.01
 epochs = 5
@@ -131,7 +143,7 @@ for epoch in range(epochs):
         #     normalized = torch.Tensor(new_arg).view(1,-1)
         
         
-        out = model(normalized,True)
+        out = model(data,True)
         
         loss = loss_func(out)
         loss.backward()
@@ -158,40 +170,44 @@ genModel = genNet(dev4, 1,4,2,paramserver,1)
 
 
 # %%
-        
+
+
 total_losses = np.zeros((50) , float)
 # %%
-batches = np.arange(n_train_samples)
-total_loss = []
-total_losses = np.zeros(n_train_samples)
-with torch.no_grad():
-    correct = 0     
-    for i in range(n_train_samples):
-    # for i in new_batches:
-        data = train_qubits[i]
+# batches = np.arange(n_train_samples)
+# total_loss = []
+# total_losses = np.zeros(n_train_samples)
+# with torch.no_grad():
+#     correct = 0     
+#     for i in range(n_train_samples):
+#     # for i in new_batches:
+#         data = train_qubits[i]
         
-        normalized = np.abs(nn.functional.normalize((data).view(1,-1)).numpy()).reshape(-1)
-        normalized = torch.Tensor(normalized).view(1,-1)
+#         normalized = np.abs(nn.functional.normalize((data).view(1,-1)).numpy()).reshape(-1)
+#         normalized = torch.Tensor(normalized).view(1,-1)
         
     
     
-        output = model(data.view(1,-1), training_mode = False, return_latent =False) 
+#         output = model(data.view(1,-1), training_mode = False, return_latent =False) 
         
-        output2 = model(data.view(1,-1), training_mode = True) 
+#         output2 = model(data.view(1,-1), training_mode = True) 
 
-        print(output2)
-        output = model(data.view(1,-1), training_mode = False, return_latent =False) 
-        # lat_out = latModel(data.view(1,-1))
-        # gen_out = genModel(np.sqrt(lat_out.detach()))
+#         print(output2)
+#         output = model(data.view(1,-1), training_mode = False, return_latent =False) 
+#         # lat_out = latModel(data.view(1,-1))
+#         # gen_out = genModel(np.sqrt(lat_out.detach()))
         
-        # visualize_state_vec(output.detach() , 'output ' + str(i) , 2)
-        # visualize_state_vec(normalized**2, 'data ' + str(i),2)
+#         # visualize_state_vec(output.detach() , 'output ' + str(i) , 2)
+#         # visualize_state_vec(normalized**2, 'data ' + str(i),2)
         
-        total_losses[i] = loss_func(output2)
+#         total_losses[i] = loss_func(output2)
         
-new_batches = np.argsort(total_losses)[:25]
+# new_batches = np.argsort(total_losses)[:25]
+model(data.view(1,-1), training_mode = False, return_latent =False) 
 
 # %% Extracting the parameters, to select suitable training data
+
+# Retrieve fine-tuned model parameters
 first_rots , final_rots ,cnots ,wires_list = model.paramServer()
 # %%
 from qiskit import QuantumCircuit, execute, Aer
@@ -208,8 +224,10 @@ gen_qml = qml.device("default.qubit", wires=3,shots = 1000)
 lat_loss = np.zeros((200) , float)
 output_loss = np.zeros((200,4) , float)
 
+
 @qml.qnode(dev_qml)
 def penny(inputs,fir,cnot,last):
+    # Get the encoded qubits
     qml.templates.AmplitudeEmbedding(inputs, wires = [1,2], normalize = True,pad=(0.j))
     
     qml.QubitUnitary(np.matrix(fir[0]), wires = 1)
@@ -225,6 +243,7 @@ def penny(inputs,fir,cnot,last):
 
 @qml.qnode(lat_dev_qml)
 def generate_penny(inputs):
+    # Get Reconstructed output
     qml.templates.AmplitudeEmbedding(inputs, wires = [1, 2], normalize = True,pad=(0.j))
 
     qml.QubitUnitary(first_rots[0] , wires = 1)
@@ -251,6 +270,7 @@ def generate_penny(inputs):
 
 @qml.qnode(gen_qml)
 def gen_penny(inputs):
+    # Generate data from latent
     qml.templates.AmplitudeEmbedding(inputs, wires = [ 2], normalize = True,pad=(0.j))
 
     
@@ -277,8 +297,6 @@ x = np.argsort(out_losses)[:50]
 y = np.argsort(lat_loss)[:50]
 
 selected_qubits = []
-
-
 for el in x:
     pres= False
     for j in y:
@@ -301,7 +319,29 @@ latents = tf.convert_to_tensor(selected_latent_features[:7]  , dtype_hint=tf.com
 
 targets = tf.convert_to_tensor(selected_features[7:] , dtype_hint=tf.complex128)
 target_latents = tf.convert_to_tensor(selected_latent_features[7:] , dtype_hint=tf.complex128)
- 
+
+
+
+np.save('features.npy', features)
+np.save('latents.npy', latents)
+np.save('targets.npy', targets)
+np.save('target_latents.npy', target_latents)
+
+# %% 
+# Get hand-tailored data, which are proven to be working with autoencoders
+
+features = np.load('features.npy') 
+latents = np.load('latents.npy')
+targets = np.load('targets.npy' )
+target_latents = np.load('target_latents.npy')
+
+gen_penny(penny(features[-4] , first_rots, cnots, final_rots)[1])
+features[-4].numpy() ** 2
+
+
+generate_penny(features[-1])
+
+
 # %% 
 
 
@@ -361,7 +401,7 @@ class ExpMat(tf.Module):
             return qml.probs([0])
         weight_shapes = {}
         self.qlayer = qml.qnn.KerasLayer(get_probs, weight_shapes, output_dim=2)
-    def __call__(self, x, t):
+    def __call__(self, x):
         """returns a matrix multiplication
         
         
@@ -378,14 +418,15 @@ class ExpMat(tf.Module):
         """
         
         
-        l = tf.linalg.expm(-1j * (self.pauli_x * self.b + self.pauli_y * self.c + self.pauli_z * self.d ) * t)
+        l = tf.linalg.expm(-1j * (self.pauli_x * self.b + self.pauli_y * self.c + self.pauli_z * self.d ) * 1)
         l2 = tf.linalg.expm(-1j * (self.pauli_x * self.b + self.pauli_y * self.c + self.pauli_z * self.d ) * 2)
         l3 = tf.linalg.expm(-1j * (self.pauli_x * self.b + self.pauli_y * self.c + self.pauli_z * self.d ) * 3)
         
         l = tf.linalg.matvec(l, x)
         l2 = tf.linalg.matvec(l2, x)
         l3 = tf.linalg.matvec(l3, x)
-        return [[tf.math.abs(l[0] ** 2) , tf.math.abs(l[1] ** 2)] , [tf.math.abs(l2[0] ** 2) , tf.math.abs(l2[1] ** 2)]  , [tf.math.abs(l3[0] ** 2) , tf.math.abs(l3[1] ** 2)]]
+        
+        return l,l2,l3
         # return self.qlayer((l[0] , l[1]))
 
    
@@ -401,38 +442,49 @@ def get_probs(inputs):
 
 # %%  
 expMat = ExpMat(name="expmat")
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.01)
+# %%
+optimizer = tf.keras.optimizers.SGD(learning_rate=0.004)
 loss_history = []
 
 t_count = 1
 def train_step(psi_in, psi_out, psi_out_t2, psi_out_t3 , H= 0 ):
     with tf.GradientTape() as tape:
-        # res = expMat(psi_in)
-        # for t in range(t_count): to be implemented later on
-        
-        res = expMat(tf.math.sqrt(psi_in) , 1)
 
         
-        # loss_value = tf.reduce_sum(tf.pow( tf.math.real(res) - tf.math.real(psi_out),2))/(2) + tf.reduce_sum(tf.pow( tf.math.imag(res) - tf.math.imag(psi_out),2))/(2)
-        loss_value = tf.reduce_sum(tf.pow(psi_out  - res[0] ,2))/(2) + tf.reduce_sum(tf.pow(psi_out_t2  - res[1] ,2))/(2) + tf.reduce_sum(tf.pow(psi_out_t3  - res[2] ,2))/(2) 
+        res = expMat(tf.math.sqrt(psi_in))
+        # print(res)
         
+        # loss_value = tf.reduce_sum(tf.pow( tf.math.real(res) - tf.math.real(psi_out),2))/(2) + tf.reduce_sum(tf.pow( tf.math.imag(res) - tf.math.imag(psi_out),2))/(2)
+        loss_value = tf.pow(psi_out  - res[0] ,2)/(2) + tf.pow(psi_out_t2  - res[1] ,2)/(2)# + tf.reduce_sum(tf.pow(psi_out_t3  - res[2] ,2)) /(2) 
+        print(loss_value)
+        # print(tf.math.real(loss_value))
+    
     loss_history.append(loss_value.numpy().mean())
     
     grads = tape.gradient(loss_value, expMat.trainable_variables)
     optimizer.apply_gradients(zip(grads,expMat.trainable_variables))
-    expMat.b.assign(tf.complex(tf.math.real(expMat.b), expMat.zerotensor))
-    expMat.c.assign(tf.complex(tf.math.real(expMat.c), expMat.zerotensor))
-    expMat.d.assign(tf.complex(tf.math.real(expMat.d), expMat.zerotensor))
+    # expMat.b.assign(tf.complex(tf.math.real(expMat.b), expMat.zerotensor))
+    # expMat.c.assign(tf.complex(tf.math.real(expMat.c), expMat.zerotensor))
+    # expMat.d.assign(tf.complex(tf.math.real(expMat.d), expMat.zerotensor))
+    return loss_value
+
     
     
-    
-for j in range(200):
-    for i in range(1):
+
+for j in range(10):
+
+    for i in range(7):
     # for i in range(len(features)):
-        train_step(latents[i], target_latents[i] , target_latents[i+len(features)] , target_latents[i+len(features) +len(features)])
-    
+        loss_value_tf = train_step(latents[i], target_latents[i] , target_latents[i+len(features)] , target_latents[i+len(features) +len(features)])
+    if(tf.math.real(loss_value_tf[0]) <= 0.00001):
+        break
+        
 psi_in  = latents[i]
 psi_out = target_latents[i+14]
+
+
+
+
 # %% Creating the dataset pt2: hamiltonians
 # Hamilton class, gets an input psi_in, and creates 3 output with t=1,2,3
 # Then tries to find the suitable circuit for all.
@@ -450,9 +502,7 @@ class Hamilton(nn.Module):
         
         
         self.dev1 = qml.device('default.qubit', wires=6 , shots = 1000)
-        self.dev2 = qml.device('default.qubit', wires=2 , shots = 1000)
-        self.dev3 = qml.device('default.qubit', wires=2 , shots = 1000)
-        self.dev4 = qml.device('default.qubit', wires=2 , shots = 1000)
+
         
         @qml.qnode(self.dev1)
         def q_circuit(weights_r , weights_cr  ,inputs = False):
@@ -461,90 +511,67 @@ class Hamilton(nn.Module):
             self.a = qml.Rot(*weights_r[0, 0], wires = 0)
             self.b = qml.Rot(*weights_r[0, 1], wires = 1)
             
+            self.c = qml.CRot(*weights_cr[0, 0], wires = [0,1])
+            self.d = qml.CRot(*weights_cr[0, 1], wires = [1, 0])
+            
+            self.e = qml.Rot(*weights_r[1, 0], wires = 0)
+            self.f = qml.Rot(*weights_r[1, 1], wires = 1)
+            
+            
+            
             qml.Rot(*weights_r[0, 0], wires = 2)
             qml.Rot(*weights_r[0, 1], wires = 3)
+            
+            qml.CRot(*weights_cr[0, 0], wires = [2,3])
+            qml.CRot(*weights_cr[0, 1], wires = [3, 2])
+            
+            qml.Rot(*weights_r[1, 0], wires = 2)
+            qml.Rot(*weights_r[1, 1], wires = 3)
+            
             qml.Rot(*weights_r[0, 0], wires = 2)
             qml.Rot(*weights_r[0, 1], wires = 3)
+            
+            qml.CRot(*weights_cr[0, 0], wires = [2,3])
+            qml.CRot(*weights_cr[0, 1], wires = [3, 2])
+            
+            qml.Rot(*weights_r[1, 0], wires = 2)
+            qml.Rot(*weights_r[1, 1], wires = 3)
             
             
             qml.Rot(*weights_r[0, 0], wires = 4)
             qml.Rot(*weights_r[0, 1], wires = 5)
+            
+            qml.CRot(*weights_cr[0, 0], wires = [4,5])
+            qml.CRot(*weights_cr[0, 1], wires = [5,4])
+            
+            qml.Rot(*weights_r[1, 0], wires = 4)
+            qml.Rot(*weights_r[1, 1], wires = 5)
+            
             qml.Rot(*weights_r[0, 0], wires = 4)
             qml.Rot(*weights_r[0, 1], wires = 5)
+            
+            qml.CRot(*weights_cr[0, 0], wires = [4,5])
+            qml.CRot(*weights_cr[0, 1], wires = [5,4])
+            
+            qml.Rot(*weights_r[1, 0], wires = 4)
+            qml.Rot(*weights_r[1, 1], wires = 5)
+            
             qml.Rot(*weights_r[0, 0], wires = 4)
             qml.Rot(*weights_r[0, 1], wires = 5)
+            
+            qml.CRot(*weights_cr[0, 0], wires = [4,5])
+            qml.CRot(*weights_cr[0, 1], wires = [5,4])
+            
+            qml.Rot(*weights_r[1, 0], wires = 4)
+            qml.Rot(*weights_r[1, 1], wires = 5)
             
             return qml.probs([0,1,2,3,4,5])
-            
-        @qml.qnode(self.dev4)
-        def q_circuit1(weights_r , weights_cr ,inputs = False):
-            
-            self.embedding(inputs)
-            
-            if(self.test == True):
-                self.first_rots2= []
-                self.first_rots2.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
-                self.first_rots2.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
-                
-            
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-            else:
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
- 
-            return qml.probs([0,1])
-        
-        @qml.qnode(self.dev2)
-        def q_circuit2(weights_r , weights_cr ,inputs = False):
-
-            self.embedding(inputs)
-            
-            if(self.test == True):
-                self.first_rots3= []
-                self.first_rots3.append(np.matrix((qml.Rot(*weights_r[0, 0], wires = 0)).matrix))
-                self.first_rots3.append(np.matrix((qml.Rot(*weights_r[0, 1], wires = 1)).matrix))
-                
-            
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-            else:
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-                qml.Rot(*weights_r[0, 0], wires = 0)
-                qml.Rot(*weights_r[0, 1], wires = 1)
-            return qml.probs([0,1])
-        
-        @qml.qnode(self.dev3)
-        def q_circuit3(weights_r , weights_cr  ,inputs = False):
-
-            
-            self.a = qml.Rot(*weights_r[0, 0], wires = 0).matrix
-            self.b = qml.Rot(*weights_r[0, 1], wires = 1).matrix
-            self.k1 = weights_r[0, 0]
-            
-            self.k2 = weights_r[0, 1]
-            
-            
-            return qml.probs([0,1])
 
 
-        
-        self.weight_shapes = {"weights_r": (2 , 2, 3),"weights_cr": (2,1 ,3)}
-        self.weight_s = {"wr": (1 , 1,  3)}
         
         self.qlayer = qml.qnn.TorchLayer(q_circuit, w_s)
-        self.qlayer1 = qml.qnn.TorchLayer(q_circuit1, w_s)
-        self.qlayer2 = qml.qnn.TorchLayer(q_circuit2, w_s)
-        self.qlayer3 = qml.qnn.TorchLayer(q_circuit3, w_s)
-        
-        self.test = False
+
+
 
     @qml.template
     def embedding(self,inputs):
@@ -557,39 +584,13 @@ class Hamilton(nn.Module):
     def forward(self, x):
         
         return self.qlayer(x)
-        z = self.qlayer1(x)
-        q  = self.qlayer2(x)
-         
-        # print(self.qlayer.qnode.draw())
-        
-    def params(self,x):
-        self.qlayer3(x)
-        return np.copy(self.a), np.copy(self.b)
+
 
     
-# %%  prepare state vec
 
-
-d1 = features[1]
-d2 = features[2]
-
-
-
-dev6 = qml.device('default.qubit', wires=4 , shots = 1000)
-@qml.qnode(dev6)
-def s_vec(inp):
-    qml.templates.AmplitudeEmbedding(inp, wires = range(0,4), normalize = True,pad=(0.j))
-    # qml.templates.AmplitudeEmbedding(inp2, wires = range(2,4), normalize = True,pad=(0.j))
-    
-    
-    
-    return qml.probs([0,1])
-s_vec(np.kron(d1.numpy(),d2.numpy()))
 
 # %%
-
 learning_rate = 0.01
-
 loss_list_ham = []
 
 def L2_loss(target,data):
@@ -598,122 +599,109 @@ loss_func_ham = L2_loss
 
 loss_hist_ham = []
 
-w_s = {"weights_r": (2 , 2, 3),"weights_cr": (2,1 ,3)}
-# hamilton(torch.Tensor(tf.cast(features[0] , dtype = tf.float64).numpy()))
+w_s = {"weights_r": (2 , 2, 3),"weights_cr": (1,2 ,3)}
 
-hamilton = Hamilton(w_s)
-opt_ham = torch.optim.Adam(hamilton.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+hamNet = Hamilton(w_s)
+opt_ham = torch.optim.Adam(hamNet.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+
+hamNets = []
+hamiltons = []
+
+for i in range(7):
+    hamNets.append(Hamilton(w_s))
 
 
+hamiltons = []
+for i in range(7):
     
-for j in range(40):
-    
-    opt_ham.zero_grad()
-    
-    # data = torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())
-    # data = torch.Tensor(np.kron(tf.cast(features[i] , dtype = tf.float64).numpy() , tf.cast(features[i] , dtype = tf.float64).numpy() ))
-    data = torch.Tensor(np.kron( tf.cast(features[i] , dtype = tf.float64).numpy() , np.kron(tf.cast(features[i] , dtype = tf.float64).numpy() , tf.cast(features[i] , dtype = tf.float64).numpy() )))
-    
-    target = (torch.Tensor(tf.cast(targets[i] , dtype = tf.float64).numpy())) ** 2
-    target2 = (torch.Tensor(tf.cast(targets[i+7] , dtype = tf.float64).numpy())) ** 2
-    target3 = (torch.Tensor(tf.cast(targets[i+14] , dtype = tf.float64).numpy())) ** 2
-    target4 = (torch.Tensor(tf.cast(targets[i+21] , dtype = tf.float64).numpy())) ** 2
-    
-    out = hamilton(data)
-    two_l_target = torch.Tensor(np.kron(np.kron(target, target2) , target3))
-    
-    loss = loss_func_ham(two_l_target,out) # + loss_func_ham(target2,out[1])  #+ loss_func_ham(target3,out[2]) #+ loss_func_ham(target4,out[3]) 
-    
-    loss.backward()
-    if(j%6 == 0):
-        print(loss)
-    
-    loss_hist_ham.append(loss)
-    opt_ham.step()
-torch.save(hamilton.state_dict() ,'2801_0' + '.pth.tar')
-
-U = np.kron(hamilton.a.matrix , hamilton.b.matrix)
-u = deepcopy(U)
-get_probs(u @ features[i].numpy())
-get_probs(u @ u @ features[i].numpy())
-get_probs(u @ u @ u @ features[i].numpy())
-
-
-
-
-
-# %%  Extraxting the Unitary, this part will be deleted later on
-
-ddev = qml.device("default.qubit", wires=2,shots = 1000)
-c1 = []
-
-c2 = []
-
-c3 = []
-
-
-@qml.qnode(ddev)
-def d_circuit(weights_r ,weights_cr,weights_crr,weights_crrr, weights_crrrr,weights_crrrrr, inputs):
-
-    
-    qml.templates.AmplitudeEmbedding(inputs, wires = range(0,2), normalize = True,pad=(0.j))
-    
-    c1.append(np.matrix((qml.Rot(*weights_r, wires = 0)).matrix))
-    c1.append(np.matrix((qml.Rot(*weights_cr, wires = 1)).matrix))
-    
-    c3.append(np.matrix((qml.CRot(*weights_crrrr, wires = [0,1])).matrix))
-    c3.append(np.matrix((qml.CRot(*weights_crrrrr, wires = [1,0])).matrix))
+    hamNet = hamNets[i]
+    opt_ham = torch.optim.Adam(hamNet.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+    for j in range(30):
+        
+        opt_ham.zero_grad()
+        
+        # data = torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())
+        # data = torch.Tensor(np.kron(tf.cast(features[i] , dtype = tf.float64).numpy() , tf.cast(features[i] , dtype = tf.float64).numpy() ))
+        data = torch.Tensor(np.kron( tf.cast(features[i] , dtype = tf.float64).numpy() , np.kron(tf.cast(features[i] , dtype = tf.float64).numpy() , tf.cast(features[i] , dtype = tf.float64).numpy() )))
+        
+        target = (torch.Tensor(tf.cast(targets[i] , dtype = tf.float64).numpy())) ** 2
+        target2 = (torch.Tensor(tf.cast(targets[i+7] , dtype = tf.float64).numpy())) ** 2
+        target3 = (torch.Tensor(tf.cast(targets[i+14] , dtype = tf.float64).numpy())) ** 2
+        
+        
+        out = hamNet(data)
+        two_l_target = torch.Tensor(np.kron(np.kron(target, target2) , target3))
+        
+        loss = loss_func_ham(two_l_target,out) # + loss_func_ham(target2,out[1])  #+ loss_func_ham(target3,out[2]) #+ loss_func_ham(target4,out[3]) 
+        
+        loss.backward()
+        
+        if(j%6 == 0):
+            print(loss)
+        
+        loss_hist_ham.append(loss)
+        opt_ham.step()
+    hUf = deepcopy(np.kron(hamNet.a.matrix , hamNet.b.matrix))
+    hUc1 = deepcopy(hamNet.c.matrix)
+    hUc2t = deepcopy(hamNet.d.matrix)
     
     
-    c2.append(np.matrix((qml.Rot(*weights_crr, wires = 0)).matrix))
-    c2.append(np.matrix((qml.Rot(*weights_crrr, wires = 1)).matrix))
-    return qml.probs([0,1])
-
-
-cnotssss = np.copy( c3[1] )
-cnotssss[1,1] = np.copy( c3[1][2,2] )
-cnotssss[1,3] = np.copy( c3[1][2,3] )
-cnotssss[3,1] = np.copy( c3[1][3,2] )
-cnotssss[3,2] = 0
-cnotssss[2,3] = 0
-cnotssss[2,2] = 1
-print(d_circuit( np.array([1,2,3]) , np.array([4,5,6]) ,   np.array([1,3,1]) ,  np.array([2,3,7]) , np.array([5,4,4]) ,np.array([14,0.3,1]) ,   (torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())).numpy() ))
-ress =  np.kron(c2[0],c2[1])  @ cnotssss @  c3[0] @  np.kron(c1[0],c1[1])  @ (torch.Tensor(tf.cast(features[i] , dtype = tf.float64).numpy())).numpy() 
-
-np.abs( np.array(ress) ** 2 )
-
-# %%
+    cnotss = np.copy( hUc2t )
+    cnotss[1,1] = np.copy( hUc2t[2,2] )
+    cnotss[1,3] = np.copy( hUc2t[2,3] )
+    cnotss[3,1] = np.copy( hUc2t[3,2] )
+    cnotss[3,2] = 0
+    cnotss[2,3] = 0
+    cnotss[2,2] = 1
     
-backend = Aer.get_backend('unitary_simulator')
+    hUfin = deepcopy(np.kron(hamNet.e.matrix , hamNet.f.matrix))
+    
+    newU = hUfin @ cnotss @ hUc1 @ hUf
+    hamiltons.append(newU)
+    # hamNets.append(hamNet)
+    print('loss is :',  get_probs(hamiltons[i] @ features[i].numpy()))
 
-#The circuit without measurement
-circ = QuantumCircuit(2)
-fr0 = qiskit.extensions.UnitaryGate(hamOld[i].first_rots[0])
-fr1 = qiskit.extensions.UnitaryGate(hamOld[i].first_rots[1])
-
-cnot0 = qiskit.extensions.UnitaryGate(hamOld[i].cnot[0])
-cnot1 = qiskit.extensions.UnitaryGate(hamOld[i].cnot[1])
-
-fn0 = qiskit.extensions.UnitaryGate(hamOld[i].final_rots[0])
-fn1 = qiskit.extensions.UnitaryGate(hamOld[i].final_rots[1])
-
-# circ.initialize(features[i].numpy() , [0,1])
-circ.append(fr0, [0])
-circ.append(fr1, [1])
-
-circ.append(cnot0, [0,1])
-circ.append(cnot1, [1,0])
-
-circ.append(fn0, [0])
-circ.append(fn1, [1])
+# %% 
+for h in range(len(hamNets)):
+    torch.save(hamNets[h].state_dict() ,'circ' + str(h) + '.pth.tar')
+    np.save('circ' + str(h) + '.npy', hamiltons[h])
 
 
-circ.draw()
-#job execution and getting the result as an object
-job = execute(circ, backend)
+hamiltonian_matrices = []  # they are hermitians, refer to the hamiltonian of the system
+for h in range(len(hamNets)):
+    hamiltonian_matrices.append( logm(np.array(hamiltons[h])) * 1j )
 
-result = job.result()
-outputstate = result.get_statevector(circ, decimals=3)
-#get the unitary matrix from the result object
-U = result.get_unitary(circ, decimals=3)
+# we found the hamiltonians !!
 
+get_probs(expm(-2j* hamiltonian_matrices[0]) @ features[0].numpy())
+targets[7] ** 2
+
+load_hamilton_data(hamiltons,hamNets)
+hamNets[0].load_state_dict(torch.load('circ' + str(0) + '.pth.tar'))
+
+# %% Loading hamiltonian info:
+
+def load_hamilton_data(hamilton, hamNets):
+    for i in range(len(hamNets)):
+        hamNets[i].load_state_dict(torch.load('circ' + str(i) + '.pth.tar'))
+        hamilton[i] = np.load('circ' + str(i) + '.npy')
+    print(hamNets)
+    
+     
+
+
+# %% bring all together
+from scipy.linalg import expm, sinm, cosm,logm
+for i in range(7):
+    print(get_probs(expm(-1j* hamiltonian_matrices[i] * 2) @ features[i].numpy()) - (targets[i+7]**2).numpy())
+    # print(get_probs( hamiltonians[i] @ features[i].numpy()) - (targets[i]**2).numpy())
+
+decoded_original_qubit = (np.sqrt(gen_penny(  penny(features[i].numpy() , first_rots, cnots, final_rots)[1])))
+for i in range(7):
+    print(get_probs(expm(-1j* hamiltonian_matrices[i] * 2) @ (np.sqrt(gen_penny(  penny(features[i].numpy() , first_rots, cnots, final_rots)[1])))) - (targets[i+7]**2).numpy())
+    
+for i in range(7):
+    print(get_probs(expm(-1j* hamiltonian_matrices[i] * 2) @ (np.sqrt(gen_penny(latents[i].numpy() )))) - (targets[i+7]**2).numpy())
+    
+    
+    print(features[i].numpy())

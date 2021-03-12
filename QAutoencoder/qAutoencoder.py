@@ -66,11 +66,13 @@ else:
 # %%
 def Fidelity_loss(mes):
     tot  =0
+    print(mes , ' + ')
     for i in mes[0]:
         tot += i[0]
+        print(tot)
     fidelity = (2 * (tot) / len(mes[0])  - 1.00)
     
-    
+    print(fidelity)
     return torch.log(1- fidelity)
 
 dev = qml.device("default.qubit", wires=n_qubits,shots = 1000)
@@ -86,18 +88,10 @@ opt = torch.optim.Adam(model.parameters() , lr = learning_rate, betas=(0.9, 0.99
 # loss_func = torch.nn.CrossEntropyLoss() # TODO replaced with fidelity
 loss_func = Fidelity_loss
 
+
 test_loss = nn.MSELoss()
 
 
-
-q1 = np.zeros(2)
-q1[1] = 1 
-
-hadamard = np.array(((1+0j,1), (1,-1)))
-hadamard /= np.sqrt(2)
-q2 = np.zeros(2)
-q2[0] = 1 
-q2 = np.array(hadamard @ q2, dtype = 'float64')
 # %%  The Training part
 
 for epoch in range(epochs):
@@ -128,7 +122,7 @@ for epoch in range(epochs):
             
             new_arg = torch.cat((normalized[0], pad['pad_tensor']), dim=0)    
             normalized = torch.Tensor(new_arg).view(1,-1)
-        
+        print(normalized)
         
         out = model(normalized,True)
         loss = loss_func(out)
@@ -251,7 +245,7 @@ with torch.no_grad():
         #loss = test_loss((normalized**2).view(-1), output.view(-1))
             
         visualize(output.detach(), normalized ** 2 ,img_shape)
-        visualize_state_vec(output , 'output' + str(batch_idx) , training_qubits_size)
+        visualize_state_vec(output.detach() , 'output' + str(1) , 2)
         visualize_state_vec(normalized**2, 'data' + str(batch_idx),training_qubits_size)
         
         lat_out = latModel(normalized)
