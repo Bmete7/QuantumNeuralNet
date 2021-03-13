@@ -68,10 +68,11 @@ def Fidelity_loss(mes):
     for i in mes:
         
         tot += i[0]
-        print(tot)
     fidelity = (2 * (tot) / len(mes[0])  - 1.00)
     return torch.log(1- fidelity)
 
+# %%
+    '''
 n_qubits = 2
 dev2 = qml.device("default.qubit", wires=4,shots = 1000)
 model = Net(dev2, 1, 4, 2, 1)
@@ -80,11 +81,7 @@ model = Net(dev2, 1, 4, 2, 1)
 # Import the autoencoder model, which is trained
 model.load_state_dict(torch.load('21jan.pth.tar')) 
 
-learning_rate = 0.01
-epochs = 5
-loss_list = []
-opt = torch.optim.Adam(model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-loss_func = Fidelity_loss
+
 test_loss = nn.MSELoss()
 train_qubits = []
 n_train_samples = 200
@@ -111,13 +108,25 @@ for i in range(n_test_samples):
     qubit_one = np.array([zero_amp, one_amp] )
     qubit_two = np.array([zero_amp_two, one_amp_two] )
     
-    test_qubits.append(torch.from_numpy(np.kron(qubit_one,qubit_two)))
-    
+    test_qubits.append(torch.from_numpy(np.kron(qubit_one,qubit_two))) ''' 
+# %% 
+dev_embed = qml.device("default.qubit", wires=6,shots = 1000)   
+embed_model = EmbedNet(dev_embed, 1, 6, 4, 1)
+learning_rate = 0.1
+epochs = 20
+loss_list = []
+
+loss_func = Fidelity_loss
+opt = torch.optim.Adam(embed_model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+n_embed_samples = 10
+embed_features = np.random.rand(n_embed_samples,4)* np.pi
+embed_features = torch.Tensor(embed_features)
+embed_model(embed_features[0], True)
 
 
 # %%    
     
-batch_id = np.arange(n_train_samples)
+batch_id = np.arange(n_embed_samples)
 np.random.shuffle(batch_id)
 
 for epoch in range(epochs):
@@ -128,13 +137,13 @@ for epoch in range(epochs):
         # for iris dataseti
         # data = datas['data']
         
-        data  = train_qubits[i]
-        
+        #data  = train_qubits[i]
+        normalized = embed_features[i]
         # They do not have to be normalized since AmplitudeEmbeddings does that
         # But we do it anyways for visualization
         
-        normalized = np.abs(nn.functional.normalize((data).view(1,-1)).numpy()).reshape(-1)
-        normalized = torch.Tensor(normalized).view(1,-1)
+        # normalized = np.abs(nn.functional.normalize((data).view(1,-1)).numpy()).reshape(-1)
+        # normalized = torch.Tensor(normalized).view(1,-1)
 
 
         # if(pad['padding_op']):
@@ -143,12 +152,12 @@ for epoch in range(epochs):
         #     normalized = torch.Tensor(new_arg).view(1,-1)
         
         
-        out = model(data,True)
+        out = embed_model(normalized,True)
         
         loss = loss_func(out)
         loss.backward()
         
-        if(i%10 == 0):
+        if(i%100 == 0):
             print(out)
         opt.step()
         
@@ -161,6 +170,7 @@ for epoch in range(epochs):
 
 # %% 
 model(data.view(1,-1),False,False,False)
+embed_model(normalized,False,False,False)
 dev3 = qml.device("default.qubit", wires=4,shots = 1000)
 dev4 = qml.device("default.qubit", wires=4,shots = 1000)
 paramserver = model.paramServer()
@@ -209,6 +219,7 @@ model(data.view(1,-1), training_mode = False, return_latent =False)
 
 # Retrieve fine-tuned model parameters
 first_rots , final_rots ,cnots ,wires_list = model.paramServer()
+first_rots , final_rots ,cnots ,wires_list = embed_model.paramServer()
 # %%
 from qiskit import QuantumCircuit, execute, Aer
 from qiskit.visualization import plot_histogram, plot_bloch_vector
@@ -218,7 +229,7 @@ import qiskit
 # succesfully d/encoded. Thus, we make sure that if the second network in the
 # pipeline works, whole system should work
 
-dev_qml = qml.device("default.qubit", wires=3,shots = 1000)
+dev_qml = qml.device("default.qubit", wires=1,shots = 1000)
 lat_dev_qml = qml.device("default.qubit", wires=3,shots = 1000)
 gen_qml = qml.device("default.qubit", wires=3,shots = 1000)
 lat_loss = np.zeros((200) , float)
@@ -226,9 +237,12 @@ output_loss = np.zeros((200,4) , float)
 
 
 @qml.qnode(dev_qml)
-def penny(inputs,fir,cnot,last):
+def penny(fir,cnot,last,inputs= False):
+    print(inputs)
     # Get the encoded qubits
-    qml.templates.AmplitudeEmbedding(inputs, wires = [1,2], normalize = True,pad=(0.j))
+    #qml.templates.AmplitudeEmbedding(inputs, wires = [1,2], normalize = True,pad=(0.j))
+    qml.templates.embeddings.AngleEmbedding(inputs,wires = [1,2], rotation = 'X')
+    #qml.templates.embeddings.AngleEmbedding(inputs,wires = [1,2], rotation = 'X')
     
     qml.QubitUnitary(np.matrix(fir[0]), wires = 1)
     qml.QubitUnitary(np.matrix(fir[1]), wires = 2)
@@ -326,6 +340,12 @@ np.save('features.npy', features)
 np.save('latents.npy', latents)
 np.save('targets.npy', targets)
 np.save('target_latents.npy', target_latents)
+# %% 
+
+#data generation for basis embedding
+
+penny([3], first_rots ,cnots, final_rots)
+
 
 # %% 
 # Get hand-tailored data, which are proven to be working with autoencoders
@@ -680,12 +700,15 @@ load_hamilton_data(hamiltons,hamNets)
 hamNets[0].load_state_dict(torch.load('circ' + str(0) + '.pth.tar'))
 
 # %% Loading hamiltonian info:
-
-def load_hamilton_data(hamilton, hamNets):
-    for i in range(len(hamNets)):
-        hamNets[i].load_state_dict(torch.load('circ' + str(i) + '.pth.tar'))
-        hamilton[i] = np.load('circ' + str(i) + '.npy')
-    print(hamNets)
+for i in range(len(hamNets)):
+    hamNets[i].load_state_dict(torch.load('circ' + str(i) + '.pth.tar'))
+    hamiltons.append( np.load('circ' + str(i) + '.npy'))
+    
+# def load_hamilton_data(hamilton, hamNets):
+#     for i in range(len(hamNets)):
+#         hamNets[i].load_state_dict(torch.load('circ' + str(i) + '.pth.tar'))
+#         hamiltons.append( np.load('circ' + str(i) + '.npy'))
+#     print(hamNets)
     
      
 
