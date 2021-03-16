@@ -88,25 +88,22 @@ class EmbedNet(nn.Module):
             for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
                 ind = i - (self.latent_space_size + self.auxillary_qubit_size)
                 qml.Rot(*weights_r[1, ind], wires = i)
-            
-        
             if(self.training_mode==True):
                 self.SWAP_Test()
                 return [qml.probs(i) for i in range(self.auxillary_qubit_size)]
-            elif(self.training_mode==False and self.return_latent == True):
-                if(self.return_latent_vec == False ):
-                    # return [qml.expval(qml.PauliZ(i)) for i in range(auxillary_qubit_size+latent_space_size+1,n_qubits)]
-                    return qml.probs(range(auxillary_qubit_size+latent_space_size+latent_space_size,n_qubits ))
-                else:
-                    return qml.probs(range(auxillary_qubit_size+latent_space_size+latent_space_size,n_qubits ))
+
             else:
-                
+                if(self.return_laten == True): 
+                    return qml.probs(range(auxillary_qubit_size+latent_space_size+latent_space_size,n_qubits ))
+                # return [qml.expval(qml.PauliZ(i)) for i in range(auxillary_qubit_size+latent_space_size+1,n_qubits)]
+                     
                 qml.templates.embeddings.AngleEmbedding(inputs,wires = range(self.n_qubits , self.training_qubits_size + self.n_qubits), rotation = 'X')
                 
                 self.first_rots_lat  =deepcopy(self.first_rots)
                 self.final_rots_lat = deepcopy(self.final_rots)
                 self.cnot_lat = deepcopy(self.cnot)
                 self.wires_list_lat = deepcopy(self.wires_list)
+                
                 # In the testing, SWAP the Reference Bit and the trash states
                 for i in range(self.latent_space_size):
                     qml.SWAP(wires = [self.auxillary_qubit_size + i , self.auxillary_qubit_size + i + self.latent_space_size])
@@ -122,7 +119,6 @@ class EmbedNet(nn.Module):
                 for i in range(self.latent_space_size + self.auxillary_qubit_size , self.n_qubits):
                     ind = i - (self.latent_space_size + self.auxillary_qubit_size)
                     qml.Rot(*weights_r[0, ind], wires = i).inv()
-
 
                 
                 if(self.custom_fidelity == True):
@@ -190,13 +186,14 @@ class EmbedNet(nn.Module):
         #     qml.CSWAP(wires = [0, i, i + self.latent_space_size])
         for i in range(self.auxillary_qubit_size):
             qml.Hadamard(wires = i)
-    def forward(self, x, training_mode = True, return_latent = False,return_latent_vec = False,custom_fidelity = False, run_latent=False):
+    def forward(self, x, training_mode = True, return_latent = False,custom_fidelity = False, run_latent=False):
         self.training_mode = training_mode
         self.return_latent = return_latent
-        self.return_latent_vec = return_latent_vec
+        
         self.custom_fidelity = custom_fidelity
         self.run_latent = run_latent
         x =  self.qlayer(x)
+        
         # print(self.qlayer.qnode.draw())
         #printing once before training
         # if(self.DRAW_CIRCUIT_FLAG):

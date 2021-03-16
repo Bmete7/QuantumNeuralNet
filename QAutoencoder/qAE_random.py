@@ -62,6 +62,11 @@ pauli_x  = np.array(((0j, 1), (1, 0)))
 pauli_y = np.array(((0, -1j), (1j, 0)))
 pauli_z = np.array(((1+0j, 0), (0, -1)))
 
+# %% 
+
+model_saved = False
+
+
 # %%
 def Fidelity_loss(mes):
     tot  =0
@@ -79,194 +84,107 @@ dev_embed = qml.device("default.qubit", wires=4+2+2,shots = 1000)
 embed_model = EmbedNet(dev_embed, 1, 6, 4, 1)
 embed_model = EmbedNet(dev_embed, 1, 4, 2, 1)
 learning_rate = 0.008
-epochs = 20
+epochs = 25
 loss_list = []
 
 loss_func = Fidelity_loss
 opt = torch.optim.Adam(embed_model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-n_embed_samples = 6
+n_embed_samples = 1000
 embed_features = np.random.rand(n_embed_samples,2)* np.pi
 embed_features = torch.Tensor(embed_features)
-embed_model(embed_features[0], True)
+np.save('features.npy' ,embed_features)
 
-embed_model(embed_features[0], training_mode = False)
-embed_model(torch.Tensor([0,0]) , training_mode = False)
-# %%    
+# %%  Training for the Autoencoder   
+if(model_saved == False):
+    batch_id = np.arange(n_embed_samples)
+    np.random.shuffle(batch_id)
     
-batch_id = np.arange(n_embed_samples)
-np.random.shuffle(batch_id)
+    for epoch in range(epochs):
+        total_loss = []
+        start_time = timeit.time.time()
+        for i in batch_id:
+            opt.zero_grad()
+    
+            normalized = embed_features[i]
+            
+            out = embed_model(normalized,True)
+            
+            #out = embed_model(normalized,training_mode = False,custom_fidelity = True)
+            #out = embed_model(normalized,training_mode = False, custom_fidelity = True)
+            loss = loss_func(out)
+            loss.backward()
+            
+            if(i%100 == 0):
+                print(out)
+            opt.step()
+            total_loss.append(loss.item())
+        end_time = timeit.time.time()
+        print('Time elapsed for the epoch' +  str(epoch)  + ' : {:.2f}'.format(end_time-start_time))
+        loss_list.append(sum(total_loss)/len(total_loss))
+        print('Training [{:.0f}%]\tLoss: {:.4f}'.format(100. * (epoch + 1) / epochs, loss_list[-1]))    
 
-for epoch in range(epochs):
-    total_loss = []
-    start_time = timeit.time.time()
-    for i in batch_id:
-        opt.zero_grad()
+# %% SAVE AND LOAD THE MODULE 
+PATH = './autoencoder.npy'
+if ( !model_saved):
+    print('model parameters: ',  embed_model.state_dict)    
+    torch.save(embed_model.state_dict(), PATH)
+embed_model = torch.load(PATH)
 
-        normalized = embed_features[i]
-        
-        out = embed_model(normalized,True)
-        
-        #out = embed_model(normalized,training_mode = False,custom_fidelity = True)
-        #out = embed_model(normalized,training_mode = False, custom_fidelity = True)
-        loss = loss_func(out)
-        loss.backward()
-        
-        if(i%100 == 0):
-            print(out)
-        opt.step()
-        total_loss.append(loss.item())
-    end_time = timeit.time.time()
-    print('Time elapsed for the epoch' +  str(epoch)  + ' : {:.2f}'.format(end_time-start_time))
-    loss_list.append(sum(total_loss)/len(total_loss))
-    print('Training [{:.0f}%]\tLoss: {:.4f}'.format(100. * (epoch + 1) / epochs, loss_list[-1]))    
+# %% 
+amp_dev = qml.device("default.qubit", wires=4,shots = 1000)
+@qml.qnode(amp_dev)
+def get_amps(inputs,count):
+    # getting the state vector from Angle Embedding
+    qml.templates.AngleEmbedding(inputs, wires = range(0,count), rotation = 'X' )
+    return qml.probs(range(0,count))
 
-
-
-
-embed_model(np.sqrt(embed_model(embed_features[0],False, return_latent = True).detach()), run_latent = True)
-embed_model(embed_features[0], False)
-embed_model(embed_features[0])
-print( get_amps(embed_features[4].numpy(), 2 ))
+# %% 
+succesfull_train_sample_index = []
 
 
 for i in range(n_embed_samples):
     
-    if((embed_model(embed_features[i])[0][0].item()) >= 0.97):
-        print(embed_model(embed_features[i],False) )
-        print( get_amps(embed_features[i].numpy(), 2 ))
-        print(i)
+    if((embed_model(embed_features[i])[0][0].item()) >= 0.99):
+        res = get_amps((embed_features[i].detach().numpy() ), 2 ) 
+        similarity =  embed_model(embed_features[i].detach(),False) 
+        
+        similarity = similarity.detach().numpy() - res
+        similarity.requires_grad = False
+        
+        if (((torch.sum(similarity**2)) / 4) < 0.002):
+            succesfull_train_sample_index.append(i)
+            print(i)
+        
 
 
-# get_amps(embed_features[i])
 
-# %% Extracting the parameters, to select suitable training data
-# Retrieve fine-tuned model parameters
-embed_model(normalized,False,False,False)
-first_rots , final_rots ,cnots ,wires_list = embed_model.paramServer()
-params =  embed_model.paramServer()
-# %%
-from qiskit import QuantumCircuit, execute, Aer
-from qiskit.visualization import plot_histogram, plot_bloch_vector
-from math import sqrt, pi
-import qiskit
+
+succesfull_train_samples_all = deepcopy(embed_features[succesfull_train_sample_index])
+
+
+succesfull_train_samples_latent = 
+# Their decoded versions are also quite similar
+
+succesfull_train_sample_index = []
+succesfull_train_samples_latent = torch.zeros_like(succesfull_train_samples_all)
+for i in range(len( succesfull_train_samples_all)):
+    succesfull_train_samples_latent[i] = embed_model(succesfull_train_samples_all[i],training_mode = False, return_latent = True)
+    similarity = embed_model(succesfull_train_samples_all[i],training_mode = False) - embed_model(succesfull_train_samples_latent[i].detach(), run_latent = True)    
+    if (((torch.sum(similarity**2)) / 4) < 0.002):
+        succesfull_train_sample_index.append(i)
+input_indices = int(len(succesfull_train_sample_index)/3)    
+    
+succesfull_train_samples_input = deepcopy(embed_features[succesfull_train_sample_index[:input_indices]])
+succesfull_train_samples_evolved = deepcopy(embed_features[succesfull_train_sample_index[input_indices:]])    
+print()
+print()
 # %%  This part is implemented to extract some qubits, which can be 
 # succesfully d/encoded. Thus, we make sure that if the second network in the
 # pipeline works, whole system should work
 
 
-gen_qml = qml.device("default.qubit", wires=4,shots = 1000)
-amp_dev = qml.device("default.qubit", wires=4,shots = 1000)
-lat_loss = np.zeros((200) , float)
-output_loss = np.zeros((200,4) , float)
 
-
-embed_model(normalized, training_mode = False)
-embed_model(normalized, training_mode = False, custom_fidelity = True)
-
-
-outss = embed_model(embed_features[0] , training_mode = False, return_latent = True , return_latent_vec = True)
-embed_model(torch.Tensor([2.2163, 2.3797, 0.2654, 3.0691]), training_mode = False)
-outss = torch.sqrt(outss)
-@qml.qnode(amp_dev)
-def get_amps(inputs,count):
-    # Generate data from latent
-    qml.templates.AngleEmbedding(inputs, wires = range(0,count), rotation = 'X' )
-    return qml.probs([0,1])
-    return [qml.expval(qml.PauliZ(i)) for i in range(2)]
-    
-    
-
-
-@qml.qnode(gen_qml)
-def get_e(inputs,count):
-    # Generate data from latent
-    qml.templates.AngleEmbedding(inputs, wires = range(0,count), rotation = 'X' )
-    a = qml.CRY(2, wires = [0,1]).matrix
-    b = qml.CRY(3, wires = [1,2]).matrix
-    c = qml.CRY(1, wires = [2,0]).matrix
-    # a = qml.RY(2, wires = [0]).matrix
-    # b = qml.RY(3, wires = [1]).matrix
-    # c = qml.RY(1, wires = [2]).matrix
-    
-    qml.QubitUnitary((np.matrix(c).H), wires = [2,0])
-    qml.QubitUnitary((np.matrix(b).H), wires = [1,2])
-    qml.QubitUnitary((np.matrix(a).H), wires = [0,1])
-    
-    
-    return [qml.expval(qml.PauliZ(i)) for i in range(4)]
-
-
-get_e([1.7180, 0.3774] , 2)
-get_amps([1.7180, 0.3774] , 2)
-
-
-
-print(get_e.draw())
-
-embed_model(normalized)
-
-first_rots , final_rots ,cnots ,wires_list = embed_model.paramServer()
-embed_features[0]
-gen_penny(outss.detach().numpy())
-
-
-
-@qml.qnode(gen_qml)
-def gen_penny(inputs):
-    # Generate data from latent
-    qml.templates.AmplitudeEmbedding(inputs, wires = [1,2,3], normalize = True,pad=(0.j))
-
-                
-    for i in range(0, 4):
-        ind = i
-        qml.QubitUnitary(np.matrix(final_rots[ind]).H , wires = i)
-        
-    for i in range(3,-1,-1):
-        for j in range(3,-1,-1):
-            if(i == j):
-                pass
-            else:
-                qml.QubitUnitary(np.matrix(cnots.pop()).H , wires = [i,j])
-    
-    for i in range(0,4):
-        ind = i 
-        qml.QubitUnitary(np.matrix(first_rots[ind]).H , wires = i)
-    
-    return qml.probs([0,1,2,3])
-     
-# %% 
-embed_model(embed_features[0], training_mode = False, return_latent = True)
-
-  
-for i in range(n_train_samples):
-    data = train_qubits[i]    
-    lat_loss[i] = 1 - penny(data.detach().numpy(),first_rots, cnots, final_rots)[0][0]
-    output_loss[i] = data - np.sqrt(gen_penny( penny(data.detach().numpy() , first_rots, cnots, final_rots) [1]))    
-
-out_losses = np.sum(np.abs(output_loss) , axis = 1)/4 
-
-x = np.argsort(out_losses)[:50]
-y = np.argsort(lat_loss)[:50]
-
-selected_qubits = []
-for el in x:
-    pres= False
-    for j in y:
-        if j == el:
-            pres = True 
-            break
-    if(pres == True):
-        selected_qubits.append(el)
-        
-
-selected_features = []
-selected_latent_features = []
-        
-for q in (selected_qubits):
-    selected_latent_features.append(penny(train_qubits[q].detach().numpy()   ,first_rots, cnots, final_rots)[1])
-    selected_features.append(train_qubits[q].detach().numpy() )
-    
-features = tf.convert_to_tensor(selected_features[:7] , dtype_hint=tf.complex128)
+features = tf.convert_to_tensor(succesfull_train_samples_input , dtype_hint=tf.complex128)
 latents = tf.convert_to_tensor(selected_latent_features[:7]  , dtype_hint=tf.complex128)
 
 targets = tf.convert_to_tensor(selected_features[7:] , dtype_hint=tf.complex128)
