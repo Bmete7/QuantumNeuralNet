@@ -64,7 +64,7 @@ pauli_z = np.array(((1+0j, 0), (0, -1)))
 
 # %% 
 
-model_saved = False
+model_saved = True
 
 
 # %%
@@ -81,20 +81,111 @@ def Fidelity_loss(mes):
 # %% 
  
 dev_embed = qml.device("default.qubit", wires=4+2+2,shots = 1000)
-embed_model = EmbedNet(dev_embed, 1, 6, 4, 1)
 embed_model = EmbedNet(dev_embed, 1, 4, 2, 1)
-learning_rate = 0.008
-epochs = 25
+
+learning_rate = 0.018
+epochs = 10
 loss_list = []
 
 loss_func = Fidelity_loss
 opt = torch.optim.Adam(embed_model.parameters() , lr = learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-n_embed_samples = 1000
+# %% 
+n_embed_samples = 2000
 embed_features = np.random.rand(n_embed_samples,2)* np.pi
+if(model_saved):
+    embed_features  =np.load('features_temp.npy')
+else: 
+    np.save('embed_features.npy' ,embed_features)    
 embed_features = torch.Tensor(embed_features)
-np.save('features.npy' ,embed_features)
 
+
+# %% 
+def time_evolution_simulate(i, t):
+    return sp.linalg.expm(hamiltonians[i] * -1j * t)
+def find_rx_params(cur_q_val):
+    amp_res = (cur_q_val[0] + cur_q_val[1])
+    amp_res /= cur_q_val[3] + cur_q_val[2]
+    
+    amp_res2 = (cur_q_val[0] + cur_q_val[2])
+    amp_res2 /= cur_q_val[1] + cur_q_val[3]
+    
+    amp_res = np.abs(amp_res)    
+    amp_res2 = np.abs(amp_res2)
+    a2 = 1 / (1 + (amp_res) ** 2)
+    b2 = 1 / (1 + (amp_res2) ** 2)
+    a1 = 1- a2
+    b1 = 1-b2
+    return np.arccos(np.sqrt(a1)) * 2 , np.arccos(np.sqrt(b1)) * 2
+
+pauli_list = [I,pauli_x, pauli_y, pauli_z]
+observables = [np.kron(i,j) for i in pauli_list for j in pauli_list]
+import numpy as np
+hamiltonians = []
+for i in range(500):
+    coefs = 2.5 * np.random.randn(16) + 0.5
+    ham = coefs[0] * observables[0]
+    for i in range(1,16):
+        ham += coefs[i] * observables[i] 
+    hamiltonians.append(ham)
+amps_d = qml.device("default.qubit", wires=2,shots = 1000)
+@qml.qnode(amps_d)
+def circ_amp(inputs):
+    qml.templates.embeddings.AngleEmbedding(inputs,wires = range(0,2), rotation = 'X')
+    return qml.probs([0,1])
+
+q_values =  [] 
+for i in range(500):
+    circ_amp(embed_features[i])
+    q_values.append(amps_d._state)
+import scipy as sp
+x_embed_params = []    
+x2_embed_params = [] 
+
+for i in range(500):
+    cur_q_val = q_values[i].reshape(4,)
+    
+    U_t1 = time_evolution_simulate(i, 1)
+    U_t2 = time_evolution_simulate(i, 2)
+    U_t3 = time_evolution_simulate(i, 3)
+    
+    cur_q_val_t1 = U_t1 @ cur_q_val
+    cur_q_val_t2 = U_t2 @ cur_q_val
+    cur_q_val_t3 = U_t3 @ cur_q_val
+    
+    rx_1_t1, rx_2_t1 =  find_rx_params(cur_q_val_t1)
+    rx_1_t2, rx_2_t2 = find_rx_params(cur_q_val_t2)
+    rx_1_t3, rx_2_t3 = find_rx_params(cur_q_val_t3)
+    
+    x_embed_params.append(rx_1_t1)
+    x2_embed_params.append(rx_2_t1)
+    x_embed_params.append(rx_1_t2)
+    x2_embed_params.append(rx_2_t2)
+    x_embed_params.append(rx_1_t3)
+    x2_embed_params.append(rx_2_t3)
+
+
+
+
+x_params = torch.from_numpy(np.array(x_embed_params))
+x2_params = torch.from_numpy(np.array(x2_embed_params))
+
+embed_features_hams = torch.stack((x_params,x2_params)).T
+
+embed_features[500:] = embed_features_hams
+
+amps_d = qml.device("default.qubit", wires=2,shots = 1000)
+@qml.qnode(amps_d)
+def circ_amp(inputs):
+    qml.templates.embeddings.AngleEmbedding(inputs,wires = range(0,2), rotation = 'X')
+    return qml.probs([0,1])
+
+time_evolution_simulate(47,1) @ 
+
+circ_amp(embed_features[47].detach().numpy())
+
+circ_amp(embed_features[47*3 + 500].detach().numpy())
 # %%  Training for the Autoencoder   
+model_saved = False
 if(model_saved == False):
     batch_id = np.arange(n_embed_samples)
     np.random.shuffle(batch_id)
@@ -109,8 +200,7 @@ if(model_saved == False):
             
             out = embed_model(normalized,True)
             
-            #out = embed_model(normalized,training_mode = False,custom_fidelity = True)
-            #out = embed_model(normalized,training_mode = False, custom_fidelity = True)
+
             loss = loss_func(out)
             loss.backward()
             
@@ -122,47 +212,75 @@ if(model_saved == False):
         print('Time elapsed for the epoch' +  str(epoch)  + ' : {:.2f}'.format(end_time-start_time))
         loss_list.append(sum(total_loss)/len(total_loss))
         print('Training [{:.0f}%]\tLoss: {:.4f}'.format(100. * (epoch + 1) / epochs, loss_list[-1]))    
+# %% fidelities plot 
+batch_id = np.arange(n_embed_samples)
+np.random.shuffle(batch_id)
+losses = np.zeros((n_embed_samples,1))
+for i in batch_id:
+    normalized = embed_features[i]
+    out = embed_model(normalized,True)
+    losses[i] = loss_func(out).detach().numpy()
+import matplotlib
+import matplotlib.pyplot as plt
+w = 4
+h = 3
+d = 70
+plt.figure(figsize=(w, h), dpi=d)
+plt.hist(losses, bins=np.arange(0,0.5, 0.00525))
+
+# %%
+first_rot_params_0 = opt.param_groups[0]['params'][0][0][0]
+first_rot_params_1 = opt.param_groups[0]['params'][0][0][1]
+
+crot_params_01 = opt.param_groups[0]['params'][1][0]
+crot_params_10 = opt.param_groups[0]['params'][1][1]
+
+final_rot_params_0 = opt.param_groups[0]['params'][0][1][0]
+final_rot_params_1 = opt.param_groups[0]['params'][0][1][1]
 
 # %% SAVE AND LOAD THE MODULE 
 PATH = './autoencoder.npy'
-if ( !model_saved):
-    print('model parameters: ',  embed_model.state_dict)    
+
+
+
+if(model_saved == True):
+    embed_model.load_state_dict(torch.load(PATH))
+else:
     torch.save(embed_model.state_dict(), PATH)
-embed_model = torch.load(PATH)
+print('model parameters: ',  embed_model.state_dict)    
+
 
 # %% 
 amp_dev = qml.device("default.qubit", wires=4,shots = 1000)
 @qml.qnode(amp_dev)
-def get_amps(inputs,count):
-    # getting the state vector from Angle Embedding
+def get_amps(count, inputs = False):
     qml.templates.AngleEmbedding(inputs, wires = range(0,count), rotation = 'X' )
     return qml.probs(range(0,count))
 
 # %% 
 succesfull_train_sample_index = []
 
+# Checks if the encode/decode phase is well 
+for i in range(500):
+    if((embed_model(embed_features[i])[0][0].item()) >= 0.985 and (embed_model(embed_features[i*3 +500])[0][0].item()) >= 0.985 and (embed_model(embed_features[i*3+501])[0][0].item()) >= 0.985  ):
+        succesfull_train_sample_index.append(i)
 
-for i in range(n_embed_samples):
-    
-    if((embed_model(embed_features[i])[0][0].item()) >= 0.99):
-        res = get_amps((embed_features[i].detach().numpy() ), 2 ) 
-        similarity =  embed_model(embed_features[i].detach(),False) 
         
-        similarity = similarity.detach().numpy() - res
-        similarity.requires_grad = False
-        
-        if (((torch.sum(similarity**2)) / 4) < 0.002):
-            succesfull_train_sample_index.append(i)
-            print(i)
-        
+initial_succesfull_train_sample_index = deepcopy(succesfull_train_sample_index)
 
 
+
+
+
+len(initial_succesfull_train_sample_index)
+# np.save('initial_succesfull_train_sample_index.npy' , initial_succesfull_train_sample_index)
+# %% 
 
 
 succesfull_train_samples_all = deepcopy(embed_features[succesfull_train_sample_index])
 
 
-succesfull_train_samples_latent = 
+
 # Their decoded versions are also quite similar
 
 succesfull_train_sample_index = []
@@ -170,32 +288,57 @@ succesfull_train_samples_latent = torch.zeros_like(succesfull_train_samples_all)
 for i in range(len( succesfull_train_samples_all)):
     succesfull_train_samples_latent[i] = embed_model(succesfull_train_samples_all[i],training_mode = False, return_latent = True)
     similarity = embed_model(succesfull_train_samples_all[i],training_mode = False) - embed_model(succesfull_train_samples_latent[i].detach(), run_latent = True)    
-    if (((torch.sum(similarity**2)) / 4) < 0.002):
+    if (((torch.sum(similarity**2)) / 4) < 0.01):
         succesfull_train_sample_index.append(i)
-input_indices = int(len(succesfull_train_sample_index)/3)    
+        print(i)
+input_indices = int(len(succesfull_train_sample_index)/3)
     
-succesfull_train_samples_input = deepcopy(embed_features[succesfull_train_sample_index[:input_indices]])
-succesfull_train_samples_evolved = deepcopy(embed_features[succesfull_train_sample_index[input_indices:]])    
-print()
-print()
+succesfull_train_samples_input = deepcopy(succesfull_train_samples_all[succesfull_train_sample_index[:input_indices]])
+succesfull_train_samples_evolved = deepcopy(succesfull_train_samples_all[succesfull_train_sample_index[input_indices:]])    
+
+
+# %%  Check data performs well overall, and save them
+inp_ind  = np.random.randint(input_indices)
+# Real amplitudes
+torch.from_numpy(get_amps(2 , (succesfull_train_samples_input[inp_ind].detach().numpy() ) )) 
+# Decoder results
+embed_model(succesfull_train_samples_input[inp_ind].detach(),False) 
+# Decoded output only using their latent output
+embed_model(embed_model(succesfull_train_samples_all[inp_ind],training_mode = False, return_latent = True).detach(), run_latent = True)    
+
+# Save the succesful data points
+np.save('succesfull_train_samples_input.npy' ,succesfull_train_samples_input)
+np.save('succesfull_train_samples_evolved.npy' ,succesfull_train_samples_evolved)
+
+
+# Find the latents for the data
+succesfull_train_samples_input_latent = torch.zeros_like(succesfull_train_samples_input)
+succesfull_train_samples_evolved_latent = torch.zeros_like(succesfull_train_samples_evolved)
+
+for i in range(len( succesfull_train_samples_input )):
+    succesfull_train_samples_input_latent[i] = embed_model(succesfull_train_samples_input[i],training_mode = False, return_latent = True)
+succesfull_train_samples_input_latent = succesfull_train_samples_input_latent.detach().numpy()
+
+for i in range(len( succesfull_train_samples_evolved )):
+    succesfull_train_samples_evolved_latent[i] = embed_model(succesfull_train_samples_evolved[i],training_mode = False, return_latent = True)
+    
+succesfull_train_samples_input_latent = succesfull_train_samples_input_latent
+succesfull_train_samples_evolved_latent = succesfull_train_samples_evolved_latent
+
+# Save the latent vectors
+np.save('succesfull_train_samples_input_latent.npy' ,succesfull_train_samples_input_latent)
+np.save('succesfull_train_samples_evolved_latent.npy' ,succesfull_train_samples_evolved_latent.detach().numpy())
+
 # %%  This part is implemented to extract some qubits, which can be 
 # succesfully d/encoded. Thus, we make sure that if the second network in the
 # pipeline works, whole system should work
 
 
 
-features = tf.convert_to_tensor(succesfull_train_samples_input , dtype_hint=tf.complex128)
-latents = tf.convert_to_tensor(selected_latent_features[:7]  , dtype_hint=tf.complex128)
-
-targets = tf.convert_to_tensor(selected_features[7:] , dtype_hint=tf.complex128)
-target_latents = tf.convert_to_tensor(selected_latent_features[7:] , dtype_hint=tf.complex128)
-
-
-
-np.save('features.npy', features)
-np.save('latents.npy', latents)
-np.save('targets.npy', targets)
-np.save('target_latents.npy', target_latents)
+succesfull_train_samples_input = np.load('succesfull_train_samples_input.npy')
+succesfull_train_samples_evolved = np.load('succesfull_train_samples_evolved.npy' )
+succesfull_train_samples_input_latent = np.load('succesfull_train_samples_input_latent.npy')
+succesfull_train_samples_evolved_latent = np.load('succesfull_train_samples_evolved_latent.npy')
 # %% 
 
 #data generation for basis embedding
@@ -242,35 +385,24 @@ class ExpMat(tf.Module):
                 trainable=False,
                 dtype = tf.complex128
             )  
-
-        
-        self.b  = tf.Variable(
-                initial_value=2,
+        self.I  = tf.Variable(
+                initial_value=I,
+                trainable=False,
+                dtype = tf.complex128
+            )  
+        self.coefs = tf.Variable(
+                initial_value=[1,1,1,1,1,1,1,1,1,1,1,1],
                 trainable=True,
-                dtype = tf.complex128,
-                name = 'b'
-            )
-
-        self.c  = tf.Variable(
-                initial_value=3,
-                trainable=True,
-                dtype = tf.complex128,
-                name = 'c'
-            )
-        self.d  = tf.Variable(
-                initial_value=1,
-                trainable=True,
-                dtype =tf.complex128,
-                name = 'd'
-            )
-
+                dtype = tf.complex128
+            )  
         self.zerotensor  = tf.Variable(
                 initial_value=0,
                 trainable=False,
                 dtype = tf.float64,
                 name = 'dz'
             )
-        phasor_qml = qml.device("default.qubit", wires=1,shots = 1000)
+        self.paulis = [I, self.pauli_x, self.pauli_y,self.pauli_z]
+        phasor_qml = qml.device("default.qubit", wires=2,shots = 1000)
         @qml.qnode(phasor_qml)
         def get_probs(inputs):
             qml.templates.AmplitudeEmbedding(inputs, wires = [0], normalize = True,pad=(0.j))    
@@ -292,6 +424,8 @@ class ExpMat(tf.Module):
         output
         
         """
+        hamilton = [tf.contrib.kfac.utils.kronecker_product(i,j)  for i in self.paulis for j in self.paulis]
+        
         
         
         l = tf.linalg.expm(-1j * (self.pauli_x * self.b + self.pauli_y * self.c + self.pauli_z * self.d ) * 1)
@@ -462,7 +596,7 @@ class Hamilton(nn.Module):
         return self.qlayer(x)
 
 
-    
+# %% 
 
 
 # %%
