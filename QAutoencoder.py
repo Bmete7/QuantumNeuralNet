@@ -298,9 +298,8 @@ for n in n_qubit_sizes:
     iteration_duration.append(end_time - start_time )
     print('Time elapsed for {} qubits:  {:.2f} '.format(n_qubit_size, end_time-start_time ))
 
-input('add smt')
 
-# %% 
+# %% Training hyperparameters
 
 n_qubit_size = 10
 latent_size = 2
@@ -326,7 +325,7 @@ x = torch.rand(n_data, 2**n_qubit_size)
 x  = torch.rand(n_data, 2**n_qubit_size , dtype = torch.cfloat)
 
 
-# %% 
+# %% Training
 
 for epoch in range(epochs):
     running_loss = 0
