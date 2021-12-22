@@ -32,31 +32,15 @@ tensorlist = torch.as_tensor(tensorlist)
 # %% Import saved qubits
 
 PATH = './autoencoder_more_qubits.npy'
-PATH2 = './train_qubits.npy'
+PATH2 = './inputs_states.npy'
+tensorlist = torch.load(PATH2)
+n_data = len(tensorlist)
 n_qubit_size = 8
 latent_size = 1
 n_auxillary_qubits = latent_size
 dev = qml.device('default.qubit', wires = n_qubit_size + latent_size + n_auxillary_qubits)
-n_data = len(tensorlist)
 qAutoencoder = QuantumAutoencoder(n_qubit_size, dev, latent_size, n_auxillary_qubits, n_data)
-
-# qAutoencoder.load_state_dict(torch.load(PATH))
-
-# tensorlist = np.load(PATH2,allow_pickle = True)
-# %% 
-
-
-# for n_qubits in range(1,10):
-#     vec_dev = qml.device('default.qubit', wires = n_qubits)
-    
-#     @qml.qnode(vec_dev)
-#     def qCircuit(inputs):
-#         qml.QubitStateVector(inputs, wires = range(0,n_qubits))
-        
-#         return qml.probs(range(0,n_qubits))
-#         return [qml.expval(qml.PauliZ(q)) for q in range(0,1)]
-    
-#     print(qCircuit(tensorlist[n_qubits][0]))
+qAutoencoder.load_state_dict(torch.load(PATH))
 
 # %% 
 
@@ -68,7 +52,7 @@ opt = torch.optim.Adam(qAutoencoder.parameters() , lr = learning_rate, betas=(0.
 opt = torch.optim.RMSprop(qAutoencoder.parameters(), lr = learning_rate)
 
 batch_size = 4
-average_fidelities = []
+average_losses = []
 avg_loss = 0
 epochs = 1
 
@@ -96,38 +80,44 @@ for epoch in range(epochs):
         opt.step()
     epoch_loss = running_loss / n_data
     avg_loss = (avg_loss * epoch + epoch_loss) / (epoch + 1)
+    average_losses.append(epoch_loss)
     print(epoch_loss)
     end_time = timeit.time.time()
-    
     print('Time elapsed for the epoch' +  str(epoch)  + ' : {:.2f}'.format(end_time-start_time))
     
     
-# %% Testing
+# %% Testing, w/ fidelity
 
-
-n_qubit_size = 8
 for i in range(10):
-    # state = (torch.rand(2**n_qubit_size, dtype = torch.cfloat)) - 1.013j
-    # state = (torch.zeros(2**n_qubit_size))
-    # state[0] = 1
-    # ctr = 0
-    # while(torchnorm(state) != 1.0 and ctr <= 5):
-    #     state = torchnormalize(state)
-    #     ctr += 1
+    batch_id = np.arange(n_data)
+    np.random.shuffle(batch_id)
     
-    state = tensorlist[i]
+    state = tensorlist[batch_id[i]]
+    out = qAutoencoder(state, training_mode = True )
+    print('Fidelity is {:.9f}'.format(out.detach().numpy().squeeze()))
+
+
+# %% Testing, w/ vector similarity
+
+for i in range(10):    
+    batch_id = np.arange(n_data)
+    np.random.shuffle(batch_id)
+    state = tensorlist[batch_id[i]]
     
-    out = (qAutoencoder(state, training_mode = False))
-    out = (qAutoencoder(state, training_mode = True ))
-    print(out)
+    out = qAutoencoder(state, training_mode = True )
+    
     # input_state  = np.kron(np.kron([1,0], [1,0]),tensorlist[n_qubit_size][i].numpy())
-    input_state  = np.kron(np.kron([1,0], [1,0]),state.numpy())
-    
+    input_state  = np.kron(np.kron([1,0], [1,0]), state.numpy())
     result = np.array(dev.state.detach())
-    
-    # how similar is the output to the input
-    similarity = sum(np.abs((result-input_state) ** 2)) / 256
+    # how similar is the output to the input? 
+    similarity = sum(np.abs((result-input_state) ** 2)) / (2**n_qubit_size)
     print('similarity is {:.9f}'.format(similarity))
+
+# %%  NEXT THINGS TO DO
+
+# PREPARE THE DEV.STATE WITH THE INPUT THAT IS PREPARED WITH QARBITRARYSTATE - DONE
+# Prepare examplary hamiltonians, 
+# 
 
 # %% Calculation of durations
 '''
@@ -173,13 +163,24 @@ for n in n_qubit_sizes:
 # %%  Saving the model
 
 
-PATH
-torch.save(qAutoencoder.state_dict(), PATH)
-PATH2 = './inputs_states.npy'
-torch.save(tensorlist, PATH2)
-X = torch.load(PATH2)
-# %%  NEXT THINGS TO DO
+# PATH
+# torch.save(qAutoencoder.state_dict(), PATH)
+# PATH2 = './inputs_states.npy'
+# torch.save(tensorlist, PATH2)
+# X = torch.load(PATH2)
 
-# PREPARE THE DEV.STATE WITH THE INPUT THAT IS PREPARED WITH QARBITRARYSTATE - DONE
-# Prepare examplary hamiltonians, 
-# 
+
+# %% 
+
+
+# for n_qubits in range(1,10):
+#     vec_dev = qml.device('default.qubit', wires = n_qubits)
+    
+#     @qml.qnode(vec_dev)
+#     def qCircuit(inputs):
+#         qml.QubitStateVector(inputs, wires = range(0,n_qubits))
+        
+#         return qml.probs(range(0,n_qubits))
+#         return [qml.expval(qml.PauliZ(q)) for q in range(0,1)]
+    
+#     print(qCircuit(tensorlist[n_qubits][0]))
