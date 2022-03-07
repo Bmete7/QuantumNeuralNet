@@ -22,10 +22,11 @@ torchnorm = lambda x:torch.norm(x)
 torchnormalize = lambda x: x/torchnorm(x)
 
 # %% Data creation
-def dataPreparation(saved = True, save_tensors = False):
+def dataPreparation(saved = True, save_tensors = False, method = 'kron', number_of_samples = 2000, number_of_qubits = 11):
     # prepare normalized qubits for any number of qubits
     # save flag saves the vectors as .npy
     
+    # method: str {'kron' ,'state_prepare'}
     if(saved == True):
         try:
             PATH2 = './inputs_states.npy'
@@ -34,80 +35,89 @@ def dataPreparation(saved = True, save_tensors = False):
             pass
 
     else:
-        
-        
-        n_qubits = 8
+        n_qubits = number_of_qubits
         tensorlist = []
-        
-        
-        
-        
-        
-        
-        
-        add_real = np.arange(0,20)
-        add_imag = np.arange(0,20)
+        tensorlist_np = []
+        if(method == 'kron'):
 
-        norm_coef = (np.abs(20+20j))
-
-        states = []
-        for i in range(20):
-            for j in range(20):
-                first_prob = ((add_real[i] + add_imag[j] * 1j) / norm_coef)
-                second_prob = np.sqrt(1- np.abs(first_prob)**2)
-                states.append([first_prob, second_prob])
-
-        
-        for i in range(2000):
-            state = 1
-            for j in range(n_qubits):
-                state = np.kron(state,states[np.random.randint(len(states))])
-            tensorlist.append(torch.Tensor(state))
-        
-        return tensorlist
+            add_real = np.arange(0,20)
+            add_imag = np.arange(0,20)
     
-        datadev = qml.device('default.qubit', wires = n_qubits)
-        @qml.qnode(datadev)
-        def qData(weights, cnots):
-            for i in range(n_qubits):
-                qml.RZ( weights[i][0][0] , wires = i)
-                qml.RY( weights[i][1][0] , wires = i)
-                qml.RZ( weights[i][2][0] , wires = i)
-                
-            # for tup in cnots:
-            #     qml.CNOT(wires= tup)
-            for i in range(n_qubits):
-                qml.RZ( weights[i][0][1] , wires = i)
-                qml.RY( weights[i][1][1] , wires = i)
-                qml.RZ( weights[i][2][1] , wires = i)
-            return qml.expval(qml.PauliX(0))
-        
-        for i in range(100):
+            norm_coef = (np.abs(20+20j))
+    
+            states = []
+            for i in range(20):
+                for j in range(20):
+                    first_prob = ((add_real[i] + add_imag[j] * 1j) / norm_coef)
+                    second_prob = np.sqrt(1- np.abs(first_prob)**2)
+                    states.append([first_prob, second_prob])
+    
             
-            cnots = []
-            for i in range(n_qubits):
+            for i in range(number_of_samples):
+                state = 1
                 for j in range(n_qubits):
-                    rand = np.random.randint(n_qubits**2)
-                    if (i==j or rand >= n_qubits/2):
-                        continue
-                    cnots.append((i,j))
+                    state = np.kron(state,states[np.random.randint(len(states))])
+                tensorlist.append(torch.Tensor(state))
             
-            weights  = torch.rand(n_qubits,3,2) * (torch.pi) * 2 - (torch.pi)
-            random.shuffle(cnots)
-            qData(weights, cnots)
-            ctr = 0
+            return tensorlist
+        
+        elif(method== 'state_prepare'):
+            data_preparation_device = qml.device('default.qubit', wires = n_qubits)
+            start_time = timeit.time.time()
+            @qml.qnode(data_preparation_device)
+            def qData(weights, cnots):
+                for i in range(n_qubits):
+                    
+                    qml.Rot( *weights[i], wires = i)
+                    
+                # for tup in cnots:
+                #     qml.CNOT(wires = tup)
+                # for i in range(n_qubits):
+                #     qml.RZ( weights[i][0][1] , wires = i)
+                #     qml.RY( weights[i][1][1] , wires = i)
+                #     qml.RZ( weights[i][2][1] , wires = i)
+                return qml.state()
             
-            state= torch.Tensor(datadev.state)
             
-            while(torchnorm(state) != 1.0 and ctr <= 5):
-                state = torchnormalize(state)
-                ctr += 1
-            if(torchnorm(state) == 1.0):
-                tensorlist.append((state))
+            for k in range(number_of_samples):
+                cnots = []
+                ctr = 0
+                for i in range(n_qubits):
+                    for j in range(n_qubits):
+                        rand = np.random.randint(n_qubits**2)
+                        if (i==j or rand >= n_qubits/2):
+                            continue
+                        if(j == i - 1 or j == i + 1):
+                            cnots.append((i,j))
+                            ctr += 1
+                        if(ctr >= 1):
+                            break
+                    if(ctr >= 1):
+                        break
+                weights  = torch.rand(n_qubits,3) * (torch.pi) * 2 # - (torch.pi)
+                random.shuffle(cnots)
+                res = qData(weights, cnots)
+                tensorlist_np.append(res)
+                state = torch.zeros_like(torch.Tensor(res), dtype=torch.cdouble)
+                state[:] = torch.Tensor(res.real[:])
+                state[:] += torch.Tensor(res.imag[:]) * 1j
+                
+                
+                # In case results are not numerically stable due to floating point errors
+                ctr = 0
+                while(torchnorm(state) != 1.0 and ctr <= 5):
+                    state = torchnormalize(state)
+                    ctr += 1
+                if(torchnorm(state) == 1.0):
+                    tensorlist.append((state))
+            end_time = timeit.time.time()
+            print('Time elapsed for dataset creation: ' + ' : {:.2f}'.format(end_time-start_time))
+            return tensorlist
+        
         if(save_tensors == True):
             PATH2 = './inputs_states.npy'
             torch.save(tensorlist, PATH2)    
     
-    
     return tensorlist
+    
     

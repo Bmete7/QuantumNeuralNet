@@ -1,9 +1,7 @@
-import torch
+
 import pennylane as qml
 import torch.nn as nn
-import numpy as np
 
-from scipy.linalg import expm
 
 class QuantumAutoencoder(nn.Module):
     
@@ -72,6 +70,27 @@ class QuantumAutoencoder(nn.Module):
         n_auxillary_qubits: int
             number of auxillary qubits to be used as ancillas in SWAP test
         
+        
+        
+        ----------
+        
+        n_auxillary_qubits  : k
+        
+        ----------
+        
+        
+        n_latent_qubits    : k 
+        
+        
+        -----------
+        
+        
+        n_qubits          : n
+        
+        
+        ----------       
+        n_total_qubits = 2 * k + n
+        
         '''
         
         
@@ -87,12 +106,15 @@ class QuantumAutoencoder(nn.Module):
         self._encode_qubits = False
         self._training_mode = True
         self._draw_circuit = False
+        self._run_QAOA = False
+        
+        
         
         self.ctr = 0
         self.input_size = input_size
         self.embedding_mode = 'amplitude'
-        self.n_layers = 4
-        self.entanglingParameters()
+        self.n_layers = 3
+        # self.entanglingParameters()
         
         @qml.qnode(dev)
         def qCircuit(weights_r, weights_cr, inputs = False):
@@ -113,14 +135,28 @@ class QuantumAutoencoder(nn.Module):
                     for idx, i in enumerate(range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)):
                         qml.Rot(*weights_r[l, 1, idx] , wires = i)
                 
-                    
+                
+                
+                # if
+                
+                
+                
+                
+                
+                
+                
                 self.swapTestMulti()
                 # return [qml.probs(i) for i in range(self.n_auxillary_qubits)]
                 return [qml.expval(qml.PauliZ(q)) for q in range(0, self.n_auxillary_qubits )]
             else:
-                self.crot_cont = []
+                
+                
+                self.crot_lay = []
                 qml.QubitStateVector(inputs, wires = range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits))
+                # for l in range(self.n_layers):
                 for l in range(self.n_layers):
+                    crot_cont = []
+                    print(l , 'duz')
                     for idx, i in enumerate(range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)):
                         qml.Rot(*weights_r[l, 0, idx] , wires = i)
                     
@@ -131,23 +167,23 @@ class QuantumAutoencoder(nn.Module):
                                 pass
                             else:
                                 qml.CRot( *weights_cr[l, idx, ctr], wires= [i, j])
-                                self.crot_cont.insert(0,[idx,ctr, i , j] )
+                                crot_cont.insert(0,[idx,ctr, i , j] )
                                 ctr += 1
                                 
                     for idx, i in enumerate(range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)):
                         qml.Rot(*weights_r[l, 1, idx] , wires = i)
+                    self.crot_lay.insert(0, crot_cont)
+                
+                self.swapTrashStates()
                     
-                    
-                for i in range(self.n_latent_qubits - 1, 0 - 1, -1):
-                    qml.SWAP(wires = [self.n_auxillary_qubits + i , self.n_auxillary_qubits + i + self.n_latent_qubits])
-                    
-                for l in range(self.n_layers):
+                for l in range(self.n_layers-1, -1, -1):
+                    print(l, 'ters')
                     for i in range(self.n_latent_qubits + self.n_auxillary_qubits , self.n_total_qubits):
                         ind = i - (self.n_latent_qubits + self.n_auxillary_qubits)
                         qml.Rot(*weights_r[l, 1, ind], wires = i).inv()
-                        
-                    for i in range(len(self.crot_cont)):
-                        vals = self.crot_cont[i]
+                    crot_cont = self.crot_lay[l]
+                    for i in range(len(crot_cont)):
+                        vals = crot_cont[i]
                         qml.CRot( *weights_cr[l, vals[0],vals[1]]  ,wires= [vals[2],vals[3]]).inv()
                     
                     for i in range(self.n_latent_qubits + self.n_auxillary_qubits , self.n_total_qubits):
@@ -161,13 +197,25 @@ class QuantumAutoencoder(nn.Module):
         weight_shapes = {"weights_r": (self.n_layers, 2, self.n_qubits, 3),"weights_cr": (self.n_layers, self.n_qubits, self.n_qubits-1 ,3)}
         self.qLayer = qml.qnn.TorchLayer(qCircuit, weight_shapes)
         
-        
-    def forward(self, x, training_mode = True, decode_latent = False, encode_qubits = False, draw_circuit= False): 
+    
+    
+    def encodeQubits(self, inputs, encoding_type = 'encoder'):
+        if(encoding_type == 'QAOA'):
+            for i in range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits):
+                qml.Hadamard(wires = i) ## QAOA starts in an equal superposition
+            
+        elif(encoding_type == 'encoder'):
+            pass
+            
+    
+    def forward(self, x, training_mode = True, decode_latent = False, encode_qubits = False, draw_circuit = False, run_QAOA = False): 
         
         self._training_mode = training_mode
         self._decode_latent = decode_latent
         self._encode_qubits = encode_qubits
         self._draw_circuit = draw_circuit
+        self._run_QAOA = run_QAOA
+        
         
         x = self.qLayer(x)
         # Normalize exp. value between [0,1] for [1,-1]
@@ -176,9 +224,14 @@ class QuantumAutoencoder(nn.Module):
             x = x/2
         self.ctr += 1
         return x
+    
     def hamiltonianSimulation(self, x): 
         x = self.qLayer(x)
         pass
+    
+    def swapTrashStates(self):
+        for i in range(self.n_latent_qubits - 1, 0 - 1, -1):
+            qml.SWAP(wires = [self.n_auxillary_qubits + i , self.n_auxillary_qubits + i + self.n_latent_qubits])
     
     def swapTest(self):
         # SWAP Test measures the similarity between 2 qubits 
@@ -201,21 +254,21 @@ class QuantumAutoencoder(nn.Module):
         for i in range(self.n_auxillary_qubits):
             qml.Hadamard(wires = i)
     
-    @qml.template
-    def embedding(self, inputs, embedding_type ='angle'):
-        if(embedding_type == 'angle'):
-            qml.templates.embeddings.AngleEmbedding(inputs,wires = range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits ), rotation = 'X')
-        elif(embedding_type == 'entangler'):
-            # random_entangling_weights = qml.init.strong_ent_layers_normal(self.n_qubits,self.n_qubits)
-            # qml.templates.layers.StronglyEntanglingLayers(random_entangling_weights, range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)) 
-            qml.templates.layers.StronglyEntanglingLayers(self.entangling_parameters[self.ctr % self.input_size], range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)) 
-        else:
-            qml.templates.embeddings.AmplitudeEmbedding(inputs,wires = range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits ), normalize = True,pad_with=(0.j))
+    # @qml.template
+    # def embedding(self, inputs, embedding_type ='angle'):
+    #     if(embedding_type == 'angle'):
+    #         qml.templates.embeddings.AngleEmbedding(inputs,wires = range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits ), rotation = 'X')
+    #     elif(embedding_type == 'entangler'):
+    #         # random_entangling_weights = qml.init.strong_ent_layers_normal(self.n_qubits,self.n_qubits)
+    #         # qml.templates.layers.StronglyEntanglingLayers(random_entangling_weights, range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)) 
+    #         qml.templates.layers.StronglyEntanglingLayers(self.entangling_parameters[self.ctr % self.input_size], range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits)) 
+    #     else:
+    #         qml.templates.embeddings.AmplitudeEmbedding(inputs,wires = range(self.n_auxillary_qubits + self.n_latent_qubits, self.n_total_qubits ), normalize = True,pad_with=(0.j))
         
     
-    def entanglingParameters(self):
-        self.entangling_parameters = [qml.init.strong_ent_layers_normal(self.n_qubits,self.n_qubits) for i in range(self.input_size)]
-        # self.entangling_parameters = [qml.init.strong_ent_layers_uniform(self.n_qubits,self.n_qubits, low = np.pi/3, high = np.pi*3/2) for i in range(self.input_size)]
+    # def entanglingParameters(self):
+    #     self.entangling_parameters = [qml.init.strong_ent_layers_normal(self.n_qubits,self.n_qubits) for i in range(self.input_size)]
+    #     # self.entangling_parameters = [qml.init.strong_ent_layers_uniform(self.n_qubits,self.n_qubits, low = np.pi/3, high = np.pi*3/2) for i in range(self.input_size)]
     
     
     @property
@@ -251,6 +304,15 @@ class QuantumAutoencoder(nn.Module):
     @draw_circuit.setter
     def draw_circuit(self, flag):
         self._draw_circuit = flag 
+        
+    ##   
+    @property
+    def run_QAOA(self):
+        return self._run_QAOA
+    
+    @run_QAOA.setter
+    def run_QAOA(self, flag):
+        self._run_QAOA = flag 
     ##
     
     @property
