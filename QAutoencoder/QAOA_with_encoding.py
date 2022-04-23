@@ -31,7 +31,6 @@ nx.draw(G, with_labels=True, alpha=0.8)
 adj = nx.adjacency_matrix(G).todense()
 edges = list(G.edges)
 
-
 # %% 
 # 2 Backends, one(qasm) for simulating the circuit
 # the other (unitary) is for debugging purposes
@@ -39,7 +38,8 @@ edges = list(G.edges)
 backend = qiskit.BasicAer.get_backend('qasm_simulator')
 unitary_backend = qiskit.BasicAer.get_backend('unitary_simulator')
 
-def QAOA(edges, adj, beta = np.array([np.pi/10, np.pi/10, np.pi/10]) , decode = True, layers = 3):
+
+def QAOA(edges, adj, params = np.random.rand(6)*np.pi / 10,  initial_state = None, decode = True, layers = 1):
         
     '''
     Building the QAOA Ansatz, that includes U_Hc and encoding scheme,
@@ -72,29 +72,33 @@ def QAOA(edges, adj, beta = np.array([np.pi/10, np.pi/10, np.pi/10]) , decode = 
     '''
     
     ancillas = 6
-    c = qiskit.ClassicalRegister(N) # stores the measurements
+    c = qiskit.ClassicalRegister(3) # stores the measurements
     if(decode == False):
         c = qiskit.ClassicalRegister(3) # stores the measurements
     q = qiskit.QuantumRegister(N+ ancillas)
     circ = qiskit.QuantumCircuit(q,c)
     
+    beta = params[:layers]
+    gamma = params[layers:]
     
-    
-    def initializer(initial_state):
-        # b = np.ones((2**N)) / (np.sqrt(2) **N ) # equal superposition
-        if(initial_state is None):
-            # initial_state = np.zeros((2**N), dtype = np.complex128)
-            # initial_state[266] = 1 # or the statevector for one of the feasible solutions
-            initial_state = np.ones((2**N)) / (np.sqrt(2) **N ) # equal superposition
-            circ.initialize(initial_state , [q[i] for i in range(N)])
-        else:
-            if(stateVectorCheck(initial_state) == False):
-                raise('state vector is not valid')
+    def initializePlusState():
+        # initial_state = np.ones((2**N)) / (np.sqrt(2) **N )
+        initial_state = np.zeros((2**N))
+        initial_state[266] = 1
+        circ.initialize(initial_state , [q[i] for i in range(N)])
+        
+    # def initializer(initial_state):
+    #     # b = np.ones((2**N)) / (np.sqrt(2) **N ) # equal superposition
+    #     if(initial_state is None):
+    #         # initial_state = np.zeros((2**N), dtype = np.complex128)
+    #         # initial_state[266] = 1 # or the statevector for one of the feasible solutions
+    #         initial_state = np.ones((2**N)) / (np.sqrt(2) **N ) # equal superposition
+    #         circ.initialize(initial_state , [q[i] for i in range(N)])
+    #     else:
+    #         if(stateVectorCheck(initial_state) == False):
+    #             raise('state vector is not valid')
             
-            circ.initialize(initial_state , [q[i] for i in range(N)])
-    
-    
-    
+    #         circ.initialize(initial_state , [q[i] for i in range(N)])
     
     N_index = N - 1 #since qiskit has a different ordering (LSB for the first qubit), we subtract the index from this number
     
@@ -116,11 +120,14 @@ def QAOA(edges, adj, beta = np.array([np.pi/10, np.pi/10, np.pi/10]) , decode = 
                 q_2_rev = (N - 1) - q_2_rev
                 
                 circ.rzz(2 * beta[l] * (adj[u,v]) , q_1 , q_2)
-                circ.rzz(2 * beta[l] * (adj[u,v]) , q_1_rev, q_2_rev)
-                # exponential of the cost Hamiltonian
-    def mixerHamiltonian():
+                circ.rzz(2 * beta[l] * (adj[u,v]) , q_1_rev, q_2_rev) # exponential of the cost Hamiltonian
+                
+                
+    
+    def mixerHamiltonian(l):
         for i in range(N):
-            circ.rx( np.pi/30 , i)
+            circ.rx( gamma[l] , i) # exponential of the mixer Hamiltonian
+    
     # Encoder Circuit
     def encoderCircuit(n):
         if(n == 2):
@@ -132,55 +139,55 @@ def QAOA(edges, adj, beta = np.array([np.pi/10, np.pi/10, np.pi/10]) , decode = 
         else:
             
             
-            circ.x( N_index -0 )
-            circ.x( N_index -1 )
-            circ.toffoli( N_index -0, N_index -1, N_index -2 )
-            circ.x( N_index -0 )
-            circ.x( N_index -1 )
-            circ.toffoli( N_index -0, N_index -4, N_index -2 )
-            circ.toffoli( N_index -1, N_index -3, N_index -2 )
-            circ.toffoli( N_index -3, N_index -7, N_index -2 )
+            circ.x( N_index - 0)
+            circ.x( N_index - 1)
+            circ.toffoli( N_index - 0, N_index - 1, N_index - 2)
+            circ.x( N_index - 0)
+            circ.x( N_index - 1)
+            circ.toffoli( N_index - 0, N_index -4, N_index - 2)
+            circ.toffoli( N_index - 1, N_index - 3, N_index - 2)
+            circ.toffoli( N_index - 3, N_index -7, N_index - 2)
             
-            circ.toffoli( N_index -0, N_index -2, N_index -4 )
-            circ.toffoli( N_index -0, N_index -2, N_index -8 )
+            circ.toffoli( N_index - 0, N_index - 2, N_index -4)
+            circ.toffoli( N_index - 0, N_index - 2, N_index -8)
             
-            circ.toffoli( N_index -1, N_index -2, N_index -3 )
-            circ.toffoli( N_index -1, N_index -2, N_index -8 )
+            circ.toffoli( N_index - 1, N_index - 2, N_index - 3)
+            circ.toffoli( N_index - 1, N_index - 2, N_index -8)
             
             # Applying C_inv_toffoli of apply_CinvToffoli(bitstring, 2, 0, 1, 3)
             
-            circ.cnot(N_index - 2,N_index - 0)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 3)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.cnot(N_index - 2,N_index - 0)
+            circ.cnot(N_index - 2, N_index - 0)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 3)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.cnot(N_index - 2, N_index - 0)
             
-            circ.cnot(N_index - 2,N_index - 0)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 7)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.cnot(N_index - 2,N_index - 0)
+            circ.cnot(N_index - 2, N_index - 0)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 7)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.cnot(N_index - 2, N_index - 0)
             
             circ.x(N_index - 2)
             
-            circ.toffoli( N_index -0, N_index -2, N_index -5 )
-            circ.toffoli( N_index -0, N_index -2, N_index -7 )
+            circ.toffoli( N_index - 0, N_index - 2, N_index -5 )
+            circ.toffoli( N_index - 0, N_index - 2, N_index -7 )
             
-            circ.toffoli( N_index -1, N_index -2, N_index -5 )
-            circ.toffoli( N_index -1, N_index -2, N_index -6 )
+            circ.toffoli( N_index - 1, N_index - 2, N_index -5 )
+            circ.toffoli( N_index - 1, N_index - 2, N_index -6 )
             
-            circ.cnot(N_index - 2,N_index - 0)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 4)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.cnot(N_index - 2,N_index - 0)
+            circ.cnot(N_index - 2, N_index - 0)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 4)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.cnot(N_index - 2, N_index - 0)
             
             
-            circ.cnot(N_index - 2,N_index - 0)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 6)
-            circ.cnot(N_index - 2,N_index - 1)
-            circ.cnot(N_index - 2,N_index - 0)
+            circ.cnot(N_index - 2, N_index - 0)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 6)
+            circ.cnot(N_index - 2, N_index - 1)
+            circ.cnot(N_index - 2, N_index - 0)
             
             circ.x(N_index - 2)
             
@@ -196,17 +203,8 @@ def QAOA(edges, adj, beta = np.array([np.pi/10, np.pi/10, np.pi/10]) , decode = 
             circ.reset(1)
             circ.reset(0)
         if(n==3):
-            # Takes too much time
-            
-            
             for i in range(ancillas):
                 circ.swap(N + i, N_index - i)
-            # circ.reset(N - 8)
-            # circ.reset(N - 7)
-            # circ.reset(N - 6)
-            # circ.reset(N - 5)
-            # circ.reset(N - 4)
-            # circ.reset(N - 3)
         
     def decoderCircuit(n = 3):
         if(n == 2):
@@ -224,72 +222,73 @@ def QAOA(edges, adj, beta = np.array([np.pi/10, np.pi/10, np.pi/10]) , decode = 
             
             circ.x(N_index - 2).inverse
             
-            circ.cnot(N_index - 2,N_index - 0).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 6).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.cnot(N_index - 2,N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 6).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
             
             
-            circ.cnot(N_index - 2,N_index - 0).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 4).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.cnot(N_index - 2,N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 4).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
             
-            circ.toffoli( N_index -1, N_index -2, N_index -6 ).inverse
-            circ.toffoli( N_index -1, N_index -2, N_index -5 ).inverse
+            circ.toffoli(N_index - 1, N_index - 2, N_index - 6 ).inverse
+            circ.toffoli(N_index - 1, N_index - 2, N_index - 5 ).inverse
             
-            circ.toffoli( N_index -0, N_index -2, N_index -7 ).inverse
-            circ.toffoli( N_index -0, N_index -2, N_index -5 ).inverse
+            circ.toffoli(N_index - 0, N_index - 2, N_index - 7 ).inverse
+            circ.toffoli(N_index - 0, N_index - 2, N_index - 5 ).inverse
             
             circ.x(N_index - 2).inverse
             
-            circ.cnot(N_index - 2,N_index - 0).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 7).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.cnot(N_index - 2,N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 7).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
             
-            circ.cnot(N_index - 2,N_index - 0).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.mcx([N_index - 2,N_index - 0,N_index - 1], N_index - 3).inverse
-            circ.cnot(N_index - 2,N_index - 1).inverse
-            circ.cnot(N_index - 2,N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.mcx([N_index - 2, N_index - 0, N_index - 1], N_index - 3).inverse
+            circ.cnot(N_index - 2, N_index - 1).inverse
+            circ.cnot(N_index - 2, N_index - 0).inverse
             
 
-            circ.toffoli( N_index -1, N_index -2, N_index -8 ).inverse
-            circ.toffoli( N_index -1, N_index -2, N_index -3 ).inverse
-            circ.toffoli( N_index -0, N_index -2, N_index -8 ).inverse
-            circ.toffoli( N_index -0, N_index -2, N_index -4 ).inverse
+            circ.toffoli(N_index - 1, N_index - 2, N_index - 8).inverse
+            circ.toffoli(N_index - 1, N_index - 2, N_index - 3).inverse
+            circ.toffoli(N_index - 0, N_index - 2, N_index - 8).inverse
+            circ.toffoli(N_index - 0, N_index - 2, N_index - 4).inverse
             
-            circ.toffoli( N_index -3, N_index -7, N_index -2 ).inverse
-            circ.toffoli( N_index -1, N_index -3, N_index -2 ).inverse
-            circ.toffoli( N_index -0, N_index -4, N_index -2 ).inverse
+            circ.toffoli( N_index - 3, N_index - 7, N_index - 2).inverse
+            circ.toffoli( N_index - 1, N_index - 3, N_index - 2).inverse
+            circ.toffoli( N_index - 0, N_index - 4, N_index - 2).inverse
             
-            circ.x( N_index -1 ).inverse
-            circ.x( N_index -0 ).inverse
+            circ.x(N_index - 1).inverse
+            circ.x(N_index - 0).inverse
             
             
-            circ.toffoli( N_index -0, N_index -1, N_index -2 ).inverse
+            circ.toffoli( N_index - 0, N_index - 1, N_index - 2 ).inverse
             
-            circ.x( N_index -1 ).inverse
-            circ.x( N_index -0 ).inverse
+            circ.x( N_index - 1 ).inverse
+            circ.x( N_index - 0 ).inverse
        
             
-    initializer(initial_state)
+    initializePlusState()
+    
     for l in range(layers):
-        
         costHamiltonian(l)
-        encoderCircuit(n)
-        if(decode):
-            discardQubits(n)
-            decoderCircuit(n)
+        mixerHamiltonian(l)
+    encoderCircuit(n)
+    if(decode):
+        discardQubits(n)
+        # decoderCircuit(n)
         
     if(decode == False):
         circ.measure(q[:3],c)
     else:
-        circ.measure(q[:N],c[:N])
+        circ.measure(q[:3],c[:3])
     
     return circ
 
@@ -317,91 +316,146 @@ graph_dict = {'001010100': '000000000',
                '100001010': '000000100',
                '100010001': '000000101'} 
 
-betas = np.random.rand(3)
-for idx, (keys, vals) in enumerate(graph_dict.items()):
+# betas = np.random.rand(3)
+# for idx, (keys, vals) in enumerate(graph_dict.items()):
     
-    state =  bit2int(keys)
+#     state =  bit2int(keys)
     
-    initial_state_out = np.zeros((2**N), dtype = np.complex128)
-    initial_state_out[state] = 1 # or the statevector for one of the feasible solutions
+#     initial_state_out = np.zeros((2**N), dtype = np.complex128)
+#     initial_state_out[state] = 1 # or the statevector for one of the feasible solutions
     
-    start = time.time()
+#     start = time.time()
     
-    # circ = QAOA(edges, adj,initial_state = initial_state_out, decode = True)
-    circ = QAOA(edges, adj, betas)
-    job = backend.run(qiskit.transpile(circ, backend))
-    result = job.result()
+#     # circ = QAOA(edges, adj,initial_state = initial_state_out, decode = True)
+#     circ = QAOA(edges, adj, betas)
+#     job = backend.run(qiskit.transpile(circ, backend))
+#     result = job.result()
     
-    end = time.time()
+#     end = time.time()
 
-    print('{}th Circuit run within {:.3f} seconds'.format(idx ,end-start))
-    print('Expected Output: {}'.format(vals))
+#     print('{}th Circuit run within {:.3f} seconds'.format(idx ,end-start))
+#     print('Expected Output: {}'.format(vals))
     
-    out = majorityVote(result)
-    print('Output: {}'.format(out))    
-    print('****')
+#     out = majorityVote(result)
+#     print('Output: {}'.format(out))    
+#     print('****')
     
     
 # false positives: '110000110' -> gets encoded as '110' and 
 #                   111110000 -> gets encoded as '111'
-# %% 
-
-for i in range(10):
-    random_idx = np.random.randint(512)
-    initial_state_out = np.zeros((2**N), dtype = np.complex128)
-    initial_state_out[random_idx] = 1 # or the statevector for one of the feasible solutions
-    
-    start = time.time()
-    
-    circ = QAOA(edges, adj,initial_state = initial_state_out, decode = True)
-    job = backend.run(qiskit.transpile(circ, backend))
-    result = job.result()
-    
-    end = time.time()
-
-    print('{}th Circuit run within {:.3f} seconds'.format(i ,end-start))
-    # print('Expected Output: {}'.format(vals))
-    
-    out = majorityVote(result)
-    print('Output: {}'.format(out))    
-    print('****')
 
 # %% Loss function
-from qiskit.algorithms.optimizers import SPSA
 
-def lossFunction(out):
-    constraint_check = checkConstraints(out)
-    penalty_term = 100000
-    if(constraint_check == False):
-        return penalty_term
-    path = findPath(out)
-    loss = adj[path[0], path[1]] * adj[path[1], path[2]]
-    return loss
+from qiskit.algorithms.optimizers import SPSA
+from copy import deepcopy
+
+iteration_count = 0
+
+def lossFunction(counts):
+    global cost_dict
+    global iteration_count
+    
+    iteration_count += 1
+    
+    loss = 0
+    count_total = 0
+    for idx, (keys, vals) in enumerate(counts.items()):
         
-            
+        count_total += vals
+        loss += (cost_dict[keys] * vals)
+    loss /= count_total
+    
+    if(iteration_count % 10 == 0):
+        print(loss)
+    
+    return loss 
+
+
+
+
+
+def createPathCosts(graph3_dict, adj, n = 3):
+    cost = np.array([100,100,100,100,100,100,100,100])
+    cost_dict = {'111': 100,
+     '101': 52,
+     '001': 4,
+     '011': 52,
+     '100': 4,
+     '000': 52,
+     '010': 52,
+     '110': 100}
+    for idx, (keys, vals) in enumerate(graph3_dict.items()):
+        path = findPath(keys)
+        loss = adj[path[0], path[1]] + adj[path[1], path[2]]
+        cost[idx] = loss
+    
+    
+    return cost, cost_dict
+
+cost, cost_dict = createPathCosts(graph3_dict, adj, n = 3)
+out = 0
+
 
 def getExpVal(edges,adj):
-  backend = qiskit.Aer.get_backend('qasm_simulator')
-  backend.shots = 8192
-  def execute_circ(beta):
-    circuit = QAOA(edges, adj)
-    counts = backend.run(circuit, seed_simulator = 10, shots = 8192).result()
-    counts = majorityVote(counts)
-    
-    return lossFunction(counts)
-  return execute_circ
+    backend = qiskit.Aer.get_backend('qasm_simulator')
+    backend.shots = 1024
+    def execute_circ(params):
+        global out
+        circuit = QAOA(edges, adj, params, decode = True)
+        counts = backend.run(circuit, seed_simulator = 10, shots = 1024).result()
+        out = deepcopy(counts)
+        return lossFunction(counts.get_counts())
+        
+        
+    return execute_circ
 
+init_params = np.random.rand(6)*np.pi / 10
 exp = getExpVal(edges, adj)
-exp(betas)
-
+print(exp(init_params))
+# %% Optimization
 start = time.time()
-optimizer = SPSA(maxiter=1000)
-expVal = getExpVal(edges, adj)
-optimized_parameters, final_cost, number_of_circuit_calls = optimizer.optimize(8, expVal, initial_point=np.random.rand(3) * np.pi / 10 )
+optimizer = SPSA(maxiter=5000)
+optimized_parameters, final_cost, number_of_circuit_calls = optimizer.optimize(6, exp, initial_point = init_params )
 end = time.time()
-print('Optimization terminated within {:.3f} seconds' , end-start)
+
+print('Optimization terminated within {:.3f} seconds'.format(end-start))
+print('The final cost: {}'.format(exp(optimized_parameters)))
+print(out)
+# %% 
+
+circuit = QAOA(edges, adj, init_params, decode = True)
+backend = qiskit.Aer.get_backend('qasm_simulator')
+counts = backend.run(circuit, seed_simulator = 10, shots = 1024).result()
+counts.get_counts()
+
+
+expVal(init_params)
+
+
 # %% Unit Tests
 
-sys.argv = ['Tests\\unitTest.py','n=3']
-execfile('Tests\\unitTest.py')
+# sys.argv = ['Tests\\unitTest.py','n=3']
+# execfile('Tests\\unitTest.py')
+
+# %% 
+
+# for i in range(10):
+#     random_idx = np.random.randint(512)
+#     initial_state_out = np.zeros((2**N), dtype = np.complex128)
+#     initial_state_out[random_idx] = 1 # or the statevector for one of the feasible solutions
+    
+#     start = time.time()
+    
+#     circ = QAOA(edges, adj,initial_state = initial_state_out, decode = True)
+#     job = backend.run(qiskit.transpile(circ, backend))
+#     result = job.result()
+    
+#     end = time.time()
+
+#     print('{}th Circuit run within {:.3f} seconds'.format(i ,end-start))
+#     # print('Expected Output: {}'.format(vals))
+    
+#     out = majorityVote(result)
+#     print('Output: {}'.format(out))    
+#     print('****')
 
