@@ -6,7 +6,7 @@ Created on Tue Nov 17 14:32:50 2020
 """
 
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 # %%
 
@@ -46,3 +46,64 @@ def visualize_state_vec(output , string,training_qubits_size):
     plt.ylim(top = 1) #xmax is your value
     plt.ylim(bottom = 0.00) #xmax is your value
     plt.show()
+
+def objective_function_landmark(objective_evals):
+    fig = plt.figure(figsize=(6, 3.2))
+    ax = fig.add_subplot(111)
+    ax.set_title('colorMap')
+    plt.imshow(objective_evals)
+    ax.set_aspect('equal')
+    cax = fig.add_axes([0.12, 0.1, 0.78, 0.8])
+    cax.get_xaxis().set_visible(False)
+    cax.get_yaxis().set_visible(False)
+    cax.patch.set_alpha(0)
+    cax.set_frame_on(False)
+    plt.colorbar(orientation='vertical')
+    plt.show()
+
+
+def loss_plot(evals, labels, plot_type = 'loss' ):
+    
+    if(plot_type == 'acc'):
+        title = 'Validation Accuracies'
+        y_label = 'Accuracy'
+    elif(plot_type == 'loss'):
+        title = 'Running Average of Losses'
+        y_label = 'Loss'
+    else:
+        raise('Wrong plot type')
+
+    
+    fig, ax = plt.subplots()
+    plt.title(title, fontsize=14)
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel(y_label, fontsize=12)
+    
+    for idx, evals in enumerate(evals):
+        ax.plot(evals, label= labels[idx])
+        
+    # Create a legend for the first line.
+    
+    # Add the legend manually to the Axes.
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+    
+    
+    plt.show()
+    
+def energyLandscape(epsilon, fn_eval):
+    mesh = np.meshgrid(epsilon,epsilon)
+
+    fig = plt.figure(figsize=(6,5))
+    left, bottom, width, height = 0.1, 0.1, 0.8, 0.8
+    ax = fig.add_axes([left, bottom, width, height]) 
+
+    cp = plt.contourf(epsilon, epsilon, fn_eval )
+    plt.colorbar(cp)
+
+    ax.set_title('Expected energy landscape, p=1')
+    ax.set_xlabel('gamma')
+    ax.set_ylabel('beta')
+    plt.show()
+    
+    
+    
